@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
+from voiceover_mage.lib.logging import get_logger
 from voiceover_mage.npc.models import RawNPCData
 
 
@@ -18,6 +19,7 @@ class BaseWikiNPCExtractor(ABC):
         self.http_client = client or httpx.AsyncClient(  # Allow for dependency injection
             headers={"User-Agent": "Gielinor-Speaks/1.0 (https://github.com/gielinor-speaks/)"}
         )
+        self.logger = get_logger(__name__)
 
     @abstractmethod
     async def extract_npc_data(self, npc_id: int) -> RawNPCData:
@@ -26,12 +28,32 @@ class BaseWikiNPCExtractor(ABC):
 
     async def _get_npc_page_url(self, npc_id: int) -> str:
         """Get the wiki page for an NPC by ID."""
+        lookup_url = self.base_url + f"/w/Special:Lookup?type=npc&id={npc_id}"
+        
+        self.logger.debug(
+            "Looking up NPC page URL",
+            npc_id=npc_id,
+            lookup_url=lookup_url
+        )
+        
         response = await self.http_client.get(
-            self.base_url + f"/w/Special:Lookup?type=npc&id={npc_id}",
+            lookup_url,
             follow_redirects=True,
         )
         response.raise_for_status()
-        return str(response.url)
+        
+        final_url = str(response.url)
+        npc_name = self._extract_npc_name_from_url(final_url)
+        
+        self.logger.info(
+            "Retrieved NPC page URL",
+            npc_id=npc_id,
+            npc_name=npc_name,
+            final_url=final_url,
+            redirects=response.history is not None
+        )
+        
+        return final_url
 
     @staticmethod
     def _extract_npc_name_from_url(url: str) -> str | None:

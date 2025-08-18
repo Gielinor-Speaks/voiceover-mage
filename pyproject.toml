@@ -9,8 +9,9 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.11.7",
     "rich>=14.1.0",
+    "structlog>=24.1.0",
     "tenacity>=9.1.2",
-    "typer[all]>=0.16.0",
+    "typer>=0.16.0",
 ]
 
 [dependency-groups]
