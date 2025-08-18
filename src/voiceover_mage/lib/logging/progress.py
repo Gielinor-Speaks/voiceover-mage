@@ -36,17 +36,17 @@ class ProgressLogInterceptor(logging.Handler):
             },
             'configuring_llm': {
                 'pattern': r'Configuring LLM extraction strategy',
-                'message': '🧠 Configuring AI extraction...',
+                'message': '🪄 Configuring AI extraction',
                 'stage': 'llm_config'
             },
             'starting_crawl': {
                 'pattern': r'Starting web crawling',
-                'message': '🕷️ Crawling wiki page...',
+                'message': '🕷️ Crawling wiki page',
                 'stage': 'crawling'
             },
             'crawling_success': {
                 'pattern': r'Crawling successful, parsing extracted content',
-                'message': '📝 Processing extracted data...',
+                'message': '📝 Processing extracted data',
                 'stage': 'processing'
             },
             'parsing_data': {
@@ -56,7 +56,7 @@ class ProgressLogInterceptor(logging.Handler):
             },
             'validating': {
                 'pattern': r'Validated NPC data object',
-                'message': '🔍 Validating NPC data...',
+                'message': '🔍 Validating NPC data',
                 'stage': 'validating'
             },
             'extraction_complete': {
@@ -71,7 +71,7 @@ class ProgressLogInterceptor(logging.Handler):
             },
             'extraction_step_start': {
                 'pattern': r'Starting extraction step',
-                'message': '🔧 Starting extraction...',
+                'message': '🔧 Starting extraction',
                 'stage': 'starting'
             },
             'extraction_step_complete': {
@@ -115,16 +115,31 @@ class ProgressLogInterceptor(logging.Handler):
                     break
             
             # If no pattern matched but it's an interesting message, show a generic update
-            if not matched and record.levelname in ['INFO', 'DEBUG']:
-                # Show generic progress for unmatched messages that look important
-                if any(keyword in message.lower() for keyword in ['start', 'processing', 'extract', 'crawl', 'configur']):
-                    self.progress_callback(f"🔄 {message[:50]}...", {
+            # Show generic progress for unmatched messages that look important
+            if (
+                not matched
+                and record.levelname in ['INFO', 'DEBUG']
+                and any(
+                    keyword in message.lower()
+                    for keyword in [
+                        'start',
+                        'processing',
+                        'extract',
+                        'crawl',
+                        'configur'
+                    ]
+                )
+            ):
+                self.progress_callback(
+                    f"🔄 {message[:50]}...",
+                    {
                         'stage': 'processing',
                         'status_name': 'generic',
                         'level': record.levelname,
                         'module': record.name,
                         **context
-                    })
+                    }
+                )
                     
         except Exception:
             # Don't let progress interceptor break the logging system
@@ -255,7 +270,7 @@ class SmartProgressTracker:
 
 
 def create_smart_progress(
-    console, initial_description: str = "🔍 Starting operation..."
+    console, initial_description: str = "🪄 Invoking magical operations..."
 ) -> tuple[Progress, Any, SmartProgressTracker]:
     """Create a smart progress display with log interception.
     

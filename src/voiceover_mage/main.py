@@ -6,7 +6,6 @@ import os
 from typing import Optional
 
 import typer
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -15,18 +14,18 @@ from rich.table import Table
 from rich.text import Text
 
 from voiceover_mage.lib.logging import (
-    configure_logging,
     LoggingMode,
-    get_logging_status,
+    configure_logging,
+    create_smart_progress,
     get_logger,
+    get_logging_status,
     with_npc_context,
     with_pipeline_context,
-    create_smart_progress,
 )
 
 app = typer.Typer(
     name="voiceover-mage",
-    help="🎭 AI Voice Generation for Old School RuneScape NPCs",
+    help="🧙‍♂️ AI Voice Generation for Old School RuneScape NPCs",
     rich_markup_mode="rich"
 )
 console = Console()
@@ -68,15 +67,14 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
                 # Interactive mode: smart progress that updates from logs
                 progress, task_id, tracker = create_smart_progress(
                     console, 
-                    f"🔍 Starting NPC extraction for ID {npc_id}..."
+                    f"🧙‍♂️ Invoking extraction magic for NPC ID {npc_id}..."
                 )
                 
-                with progress:
-                    with tracker:
-                        url = await extractor._get_npc_page_url(npc_id)
-                        npc_logger.debug("Retrieved NPC page URL", url=url)
-                        
-                        npc_data_list = await extractor.extract_npc_data(url)
+                with progress, tracker:
+                    url = await extractor._get_npc_page_url(npc_id)
+                    npc_logger.debug("Retrieved NPC page URL", url=url)
+                    
+                    npc_data_list = await extractor.extract_npc_data(url)
             else:
                 # Production mode: no progress display
                 url = await extractor._get_npc_page_url(npc_id)
@@ -172,7 +170,7 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                 # Interactive mode: smart progress that updates from logs
                 progress, task_id, tracker = create_smart_progress(
                     console, 
-                    f"🔄 Starting NPC-to-voice pipeline for ID {npc_id}..."
+                    f"🧙‍♂️ Invoking voice transformation magic for NPC ID {npc_id}..."
                 )
                 
                 with progress:
@@ -191,7 +189,7 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                         pipeline_logger.info("Extracted NPC data in pipeline", npc_name=npc_data.name)
                         
                         # Update progress for character analysis step
-                        progress.update(task_id, description="🧠 Analyzing character traits...")
+                        progress.update(task_id, description="🧙‍♂️ Analyzing character traits...")
                         pipeline_logger.info("Character analysis step", step="analysis")
                         
                 # Show completion message outside progress context
@@ -301,7 +299,7 @@ def logging_status():
 @app.callback()
 def main():
     """
-    🎭 Voiceover Mage - AI Voice Generation for OSRS NPCs
+    🧙‍♂️ Voiceover Mage - AI Voice Generation for OSRS NPCs
     
     Transform Old School RuneScape NPCs into authentic voices using AI-powered
     character analysis and voice generation.

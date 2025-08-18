@@ -306,30 +306,29 @@ class TestIntegration:
     def test_full_progress_flow(self, mock_get_logger):
         """Test complete progress flow from log message to UI update."""
         console = Console()
-        progress, task_id, tracker = create_smart_progress(console, "🔍 Starting...")
+        progress, task_id, tracker = create_smart_progress(console, "🧙‍♂️ Invoking magical operations...")
         
         # Mock the logger
         mock_logger = Mock()
         mock_get_logger.return_value = mock_logger
         
-        with patch.object(progress, 'update') as mock_update:
-            with tracker:
-                # Simulate log message
-                interceptor = tracker.interceptor
-                record = logging.LogRecord(
-                    name="voiceover_mage.test",
-                    level=logging.INFO,
-                    pathname="",
-                    lineno=0,
-                    msg="Looking up NPC page URL npc_name=TestNPC",
-                    args=(),
-                    exc_info=None
-                )
-                
-                interceptor.emit(record)
-                
-                # Verify progress was updated
-                mock_update.assert_called()
-                call_args = mock_update.call_args
-                assert "Finding NPC page" in call_args[1]["description"]
-                assert "(TestNPC)" in call_args[1]["description"]
+        with patch.object(progress, 'update') as mock_update, tracker:
+            # Simulate log message
+            interceptor = tracker.interceptor
+            record = logging.LogRecord(
+                name="voiceover_mage.test",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="Looking up NPC page URL npc_name=TestNPC",
+                args=(),
+                exc_info=None
+            )
+            
+            interceptor.emit(record)
+            
+            # Verify progress was updated
+            mock_update.assert_called()
+            call_args = mock_update.call_args
+            assert "Finding NPC page" in call_args[1]["description"]
+            assert "(TestNPC)" in call_args[1]["description"]

@@ -1,7 +1,7 @@
 [project]
 name = "voiceover-mage"
 version = "0.1.0"
-description = "AI voice generation system for Old School RuneScape NPCs"
+description = "🧙‍♂️ AI voice generation system for Old School RuneScape NPCs"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
