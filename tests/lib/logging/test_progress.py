@@ -4,7 +4,6 @@
 import logging
 from unittest.mock import Mock, patch
 
-import pytest
 from rich.console import Console
 from rich.progress import Progress
 

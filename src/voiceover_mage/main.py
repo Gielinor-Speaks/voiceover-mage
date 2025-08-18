@@ -3,21 +3,16 @@
 
 import asyncio
 import os
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.syntax import Syntax
 from rich.table import Table
-from rich.text import Text
 
 from voiceover_mage.lib.logging import (
     LoggingMode,
     configure_logging,
     create_smart_progress,
-    get_logger,
     get_logging_status,
     with_npc_context,
     with_pipeline_context,
@@ -40,7 +35,7 @@ def extract_npc(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed extraction process"),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON logs instead of rich interface"),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
-    log_file: Optional[str] = typer.Option(None, "--log-file", help="Custom log file path")
+    log_file: str | None = typer.Option(None, "--log-file", help="Custom log file path")
 ):
     """
     🕷️ Extract NPC data from the Old School RuneScape wiki.
@@ -54,8 +49,6 @@ def extract_npc(
 
 async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
     """Async helper for NPC extraction."""
-    logger = get_logger(__name__)
-    
     with with_npc_context(npc_id) as npc_logger:
         npc_logger.info("Starting NPC extraction", npc_id=npc_id, verbose=verbose)
         
@@ -137,7 +130,7 @@ def pipeline(
     save_output: bool = typer.Option(False, "--save", "-s", help="Save results to file"),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON logs instead of rich interface"),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
-    log_file: Optional[str] = typer.Option(None, "--log-file", help="Custom log file path")
+    log_file: str | None = typer.Option(None, "--log-file", help="Custom log file path")
 ):
     """
     🔄 Run the complete NPC-to-voice pipeline.
@@ -151,8 +144,6 @@ def pipeline(
 
 async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
     """Async helper for full pipeline."""
-    logger = get_logger(__name__)
-    
     with with_pipeline_context("npc_to_voice", npc_id=npc_id) as pipeline_logger:
         pipeline_logger.info("Starting NPC-to-voice pipeline", npc_id=npc_id, save_output=save_output)
         
@@ -173,8 +164,7 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                     f"🧙‍♂️ Invoking voice transformation magic for NPC ID {npc_id}..."
                 )
                 
-                with progress:
-                    with tracker:
+                with progress, tracker:
                         # Step 1: Extract NPC data
                         extractor = Crawl4AINPCExtractor(api_key=os.getenv("GEMINI_API_KEY"))
                         url = await extractor._get_npc_page_url(npc_id)
@@ -195,7 +185,8 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                 # Show completion message outside progress context
                 console.print(f"✅ Extracted data for: [bold green]{npc_data.name}[/bold green]")
                     
-                    # console.print(f"✅ Character analysis complete: [bold blue]{character_profile.archetype}[/bold blue]")
+                    # console.print(f"✅ Character analysis complete: "
+                    #               f"[bold blue]{character_profile.archetype}[/bold blue]")
             else:
                 # Production mode: no progress display
                 extractor = Crawl4AINPCExtractor(api_key=os.getenv("GEMINI_API_KEY"))
@@ -261,7 +252,7 @@ def _display_character_profile(profile):
     console.print(voice_table)
 
 
-def _initialize_logging(json_output: bool, log_level: str, log_file: Optional[str]) -> None:
+def _initialize_logging(json_output: bool, log_level: str, log_file: str | None) -> None:
     """Initialize logging configuration if not already done."""
     global _logging_initialized
     if not _logging_initialized:
@@ -304,7 +295,7 @@ def main():
     Transform Old School RuneScape NPCs into authentic voices using AI-powered
     character analysis and voice generation.
     """
-    pass
+    print("Hello from voiceover-mage!")
 
 
 if __name__ == "__main__":

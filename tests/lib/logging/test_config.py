@@ -5,9 +5,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
-
-import pytest
+from unittest.mock import patch
 
 from voiceover_mage.lib.logging.config import (
     LoggingMode,
@@ -42,20 +40,20 @@ class TestDetectLoggingMode:
     
     def test_detect_mode_from_env_invalid(self):
         """Test fallback when environment variable has invalid value."""
-        with patch.dict(os.environ, {"VOICEOVER_MAGE_LOG_MODE": "invalid"}):
-            with patch("sys.stdout.isatty", return_value=True):
+        with patch.dict(os.environ, {"VOICEOVER_MAGE_LOG_MODE": "invalid"}), \
+             patch("sys.stdout.isatty", return_value=True):
                 assert detect_logging_mode() == LoggingMode.INTERACTIVE
     
     def test_detect_mode_from_tty_interactive(self):
         """Test detection of interactive mode from TTY."""
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("sys.stdout.isatty", return_value=True):
+        with patch.dict(os.environ, {}, clear=True), \
+             patch("sys.stdout.isatty", return_value=True):
                 assert detect_logging_mode() == LoggingMode.INTERACTIVE
     
     def test_detect_mode_from_tty_production(self):
         """Test detection of production mode from non-TTY."""
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("sys.stdout.isatty", return_value=False):
+        with patch.dict(os.environ, {}, clear=True), \
+             patch("sys.stdout.isatty", return_value=False):
                 assert detect_logging_mode() == LoggingMode.PRODUCTION
 
 
@@ -154,7 +152,6 @@ class TestSuppressLibraryOutput:
     def test_suppress_output_context_manager(self):
         """Test that output suppression works as context manager."""
         import sys
-        from io import StringIO
         
         # Capture original stdout
         original_stdout = sys.stdout
@@ -233,13 +230,19 @@ class TestThirdPartyLogging:
             critical_loggers = ["crawl4ai", "LiteLLM", "selenium", "playwright"]
             for logger_name in critical_loggers:
                 logger = logging.getLogger(logger_name)
-                assert logger.level == logging.CRITICAL, f"Logger {logger_name} level was {logger.level}, expected {logging.CRITICAL}"
+                assert logger.level == logging.CRITICAL, (
+                    f"Logger {logger_name} level was {logger.level}, "
+                    f"expected {logging.CRITICAL}"
+                )
             
             # Check warning loggers are set to WARNING
             warning_loggers = ["httpx", "httpcore", "urllib3", "requests"]
             for logger_name in warning_loggers:
                 logger = logging.getLogger(logger_name)
-                assert logger.level == logging.WARNING, f"Logger {logger_name} level was {logger.level}, expected {logging.WARNING}"
+                assert logger.level == logging.WARNING, (
+                    f"Logger {logger_name} level was {logger.level}, "
+                    f"expected {logging.WARNING}"
+                )
     
     def test_warnings_captured(self):
         """Test that warnings are captured by logging system."""

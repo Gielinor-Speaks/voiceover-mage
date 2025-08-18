@@ -2,13 +2,14 @@
 # ABOUTME: Includes unit tests for configuration and integration tests with mocked crawl4ai components
 
 import json
-import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from tenacity import RetryError
 
 from voiceover_mage.npc.extractors.base import ExtractionError
 from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
-from voiceover_mage.npc.models import RawNPCData
+from voiceover_mage.npc.models import Gender, RawNPCData
 
 
 class TestCrawl4AINPCExtractorInitialization:
@@ -79,7 +80,7 @@ class TestCrawl4AINPCExtractorExtraction:
             assert len(result) == 1
             assert isinstance(result[0], RawNPCData)
             assert result[0].name == "Bob"
-            assert result[0].gender == "male"
+            assert result[0].gender == Gender.MALE
             assert result[0].race == "Human"
     
     @pytest.mark.asyncio
@@ -143,8 +144,12 @@ class TestCrawl4AINPCExtractorErrorHandling:
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
             
-            with pytest.raises(ExtractionError, match="Crawling failed: Network timeout"):
+            with pytest.raises(RetryError) as exc_info:
                 await extractor.extract_npc_data(url)
+            
+            # Verify the original exception is an ExtractionError with the right message
+            assert isinstance(exc_info.value.last_attempt.exception(), ExtractionError)
+            assert "Crawling failed: Network timeout" in str(exc_info.value.last_attempt.exception())
     
     @pytest.mark.asyncio
     async def test_extract_npc_data_no_result(self, extractor):
@@ -155,8 +160,12 @@ class TestCrawl4AINPCExtractorErrorHandling:
             mock_crawler.arun.return_value = None
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
             
-            with pytest.raises(ExtractionError, match="Crawling failed: No result returned"):
+            with pytest.raises(RetryError) as exc_info:
                 await extractor.extract_npc_data(url)
+            
+            # Verify the original exception is an ExtractionError with the right message
+            assert isinstance(exc_info.value.last_attempt.exception(), ExtractionError)
+            assert "Crawling failed: No result returned" in str(exc_info.value.last_attempt.exception())
     
     @pytest.mark.asyncio
     async def test_extract_npc_data_invalid_json(self, extractor):
@@ -171,8 +180,12 @@ class TestCrawl4AINPCExtractorErrorHandling:
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
             
-            with pytest.raises(ExtractionError, match="Failed to parse extracted content as JSON"):
+            with pytest.raises(RetryError) as exc_info:
                 await extractor.extract_npc_data(url)
+            
+            # Verify the original exception is an ExtractionError with the right message
+            assert isinstance(exc_info.value.last_attempt.exception(), ExtractionError)
+            assert "Failed to parse extracted content as JSON" in str(exc_info.value.last_attempt.exception())
     
     @pytest.mark.asyncio
     async def test_extract_npc_data_invalid_npc_data(self, extractor):
@@ -190,8 +203,12 @@ class TestCrawl4AINPCExtractorErrorHandling:
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
             
-            with pytest.raises(ExtractionError, match="Failed to validate NPC data"):
+            with pytest.raises(RetryError) as exc_info:
                 await extractor.extract_npc_data(url)
+            
+            # Verify the original exception is an ExtractionError with the right message
+            assert isinstance(exc_info.value.last_attempt.exception(), ExtractionError)
+            assert "Failed to validate NPC data" in str(exc_info.value.last_attempt.exception())
     
     @pytest.mark.asyncio
     async def test_extract_npc_data_unexpected_exception(self, extractor):
@@ -200,5 +217,9 @@ class TestCrawl4AINPCExtractorErrorHandling:
         with patch('voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler') as mock_crawler_class:
             mock_crawler_class.side_effect = RuntimeError("Unexpected error")
             
-            with pytest.raises(ExtractionError, match="Unexpected error during extraction"):
+            with pytest.raises(RetryError) as exc_info:
                 await extractor.extract_npc_data(url)
+            
+            # Verify the original exception is an ExtractionError with the right message
+            assert isinstance(exc_info.value.last_attempt.exception(), ExtractionError)
+            assert "Unexpected error during extraction" in str(exc_info.value.last_attempt.exception())
