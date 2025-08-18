@@ -2,13 +2,14 @@
 # ABOUTME: Provides commands for NPC extraction, character analysis, and voice generation
 
 import asyncio
-import os
+from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from voiceover_mage.config import get_config
 from voiceover_mage.lib.logging import (
     LoggingMode,
     configure_logging,
@@ -18,6 +19,16 @@ from voiceover_mage.lib.logging import (
     with_pipeline_context,
 )
 
+# Shared options that can be used in any command
+def shared_logging_options(
+    json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON logs instead of rich interface")] = False,
+    log_level: Annotated[str, typer.Option("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)")] = "INFO",
+    log_file: Annotated[str | None, typer.Option("--log-file", help="Custom log file path")] = None,
+):
+    """Initialize logging and return json_output flag."""
+    _initialize_logging(json_output, log_level, log_file)
+    return json_output
+
 app = typer.Typer(
     name="voiceover-mage",
     help="🧙‍♂️ AI Voice Generation for Old School RuneScape NPCs",
@@ -25,17 +36,13 @@ app = typer.Typer(
 )
 console = Console()
 
-# Global state for logging mode
-_logging_initialized = False
 
 
 @app.command()
 def extract_npc(
+    ctx: typer.Context,
     npc_id: int = typer.Argument(help="NPC ID to extract from the wiki"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed extraction process"),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON logs instead of rich interface"),
-    log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
-    log_file: str | None = typer.Option(None, "--log-file", help="Custom log file path")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed extraction process")
 ):
     """
     🕷️ Extract NPC data from the Old School RuneScape wiki.
@@ -43,8 +50,7 @@ def extract_npc(
     Crawls the wiki page for the specified NPC ID and extracts structured data
     including personality, appearance, and lore information.
     """
-    _initialize_logging(json_output, log_level, log_file)
-    asyncio.run(_extract_npc_async(npc_id, verbose, json_output))
+    asyncio.run(_extract_npc_async(npc_id, verbose, ctx.obj['json_output']))
 
 
 async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
@@ -54,7 +60,8 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
         
         try:
             from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
-            extractor = Crawl4AINPCExtractor(api_key=os.getenv("GEMINI_API_KEY"))
+            config = get_config()
+            extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
             
             if not json_output:
                 # Interactive mode: smart progress that updates from logs
@@ -126,11 +133,9 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
 
 @app.command()
 def pipeline(
+    ctx: typer.Context,
     npc_id: int = typer.Argument(help="NPC ID to process through full pipeline"),
-    save_output: bool = typer.Option(False, "--save", "-s", help="Save results to file"),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON logs instead of rich interface"),
-    log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
-    log_file: str | None = typer.Option(None, "--log-file", help="Custom log file path")
+    save_output: bool = typer.Option(False, "--save", "-s", help="Save results to file")
 ):
     """
     🔄 Run the complete NPC-to-voice pipeline.
@@ -138,8 +143,7 @@ def pipeline(
     Extracts NPC data, analyzes character traits, and generates voice profile
     in one seamless workflow.
     """
-    _initialize_logging(json_output, log_level, log_file)
-    asyncio.run(_pipeline_async(npc_id, save_output, json_output))
+    asyncio.run(_pipeline_async(npc_id, save_output, ctx.obj['json_output']))
 
 
 async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
@@ -166,7 +170,8 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                 
                 with progress, tracker:
                         # Step 1: Extract NPC data
-                        extractor = Crawl4AINPCExtractor(api_key=os.getenv("GEMINI_API_KEY"))
+                        config = get_config()
+                        extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
                         url = await extractor._get_npc_page_url(npc_id)
                         npc_data_list = await extractor.extract_npc_data(url)
                         
@@ -189,7 +194,8 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                     #               f"[bold blue]{character_profile.archetype}[/bold blue]")
             else:
                 # Production mode: no progress display
-                extractor = Crawl4AINPCExtractor(api_key=os.getenv("GEMINI_API_KEY"))
+                config = get_config()
+                extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
                 url = await extractor._get_npc_page_url(npc_id)
                 npc_data_list = await extractor.extract_npc_data(url)
                 
@@ -252,13 +258,16 @@ def _display_character_profile(profile):
     console.print(voice_table)
 
 
-def _initialize_logging(json_output: bool, log_level: str, log_file: str | None) -> None:
-    """Initialize logging configuration if not already done."""
-    global _logging_initialized
-    if not _logging_initialized:
-        mode = LoggingMode.PRODUCTION if json_output else LoggingMode.INTERACTIVE
-        configure_logging(mode=mode, log_level=log_level, log_file=log_file)
-        _logging_initialized = True
+def _initialize_logging(json_output: bool, log_level: str | None = None, log_file: str | None = None) -> None:
+    """Initialize logging configuration."""
+    config = get_config()
+    mode = LoggingMode.PRODUCTION if json_output else LoggingMode.INTERACTIVE
+    
+    # Use config defaults when CLI parameters are not provided
+    final_log_level = log_level or config.log_level
+    final_log_file = log_file or (str(config.log_file) if config.log_file else None)
+    
+    configure_logging(mode=mode, log_level=final_log_level, log_file=final_log_file)
 
 
 @app.command()
@@ -288,14 +297,24 @@ def logging_status():
 
 
 @app.callback()
-def main():
+def main(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON logs instead of rich interface"),
+    log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
+    log_file: str | None = typer.Option(None, "--log-file", help="Custom log file path")
+):
     """
     🧙‍♂️ Voiceover Mage - AI Voice Generation for OSRS NPCs
     
     Transform Old School RuneScape NPCs into authentic voices using AI-powered
     character analysis and voice generation.
     """
-    print("Hello from voiceover-mage!")
+    # Store global options in context for commands to access
+    ctx.ensure_object(dict)
+    ctx.obj['json_output'] = json_output
+    
+    # Initialize logging once here instead of in each command
+    _initialize_logging(json_output, log_level, log_file)
 
 
 if __name__ == "__main__":

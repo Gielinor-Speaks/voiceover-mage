@@ -2,11 +2,11 @@
 # ABOUTME: Uses crawl4ai library with LLM extraction for scraping RuneScape wiki
 
 import json
-import os
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig, LLMConfig, LLMExtractionStrategy
 from tenacity import retry, stop_after_attempt
 
+from voiceover_mage.config import get_config
 from voiceover_mage.lib.logging import (
     get_logger,
     log_api_call,
@@ -27,17 +27,19 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
         """Initialize the extractor.
 
         Args:
-            api_key: API key for the LLM provider (defaults to GEMINI_API_KEY env var)
+            api_key: API key for the LLM provider (defaults to config.gemini_api_key)
             llm_provider: LLM provider string for crawl4ai
             headless: Whether to run browser in headless mode
         """
         super().__init__()
         self.logger = get_logger(__name__)
+        config = get_config()
         
-        if not api_key and not os.getenv("GEMINI_API_KEY"):
-            raise ExtractionError("API key required - set GEMINI_API_KEY or pass api_key parameter")
+        final_api_key = api_key or config.gemini_api_key
+        if not final_api_key:
+            raise ExtractionError("API key required - set VOICEOVER_MAGE_GEMINI_API_KEY or pass api_key parameter")
 
-        self.llm_config = LLMConfig(provider=llm_provider, api_token=api_key or os.getenv("GEMINI_API_KEY"))
+        self.llm_config = LLMConfig(provider=llm_provider, api_token=final_api_key)
         self.headless = headless
         
         self.logger.info(
