@@ -65,7 +65,7 @@ async def _extract_npc_async(npc_id: int, verbose: bool):
             table.add_column("Value", style="white")
             
             table.add_row("Name", npc_data.name)
-            table.add_row("Gender", npc_data.gender.title())
+            table.add_row("Gender", npc_data.gender.name.title())
             table.add_row("Race", npc_data.race)
             table.add_row("Location", npc_data.location)
             table.add_row("Examine Text", npc_data.examine_text)

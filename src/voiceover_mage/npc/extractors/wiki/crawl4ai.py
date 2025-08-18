@@ -44,11 +44,9 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
                 f"You are provided with an NPC's web page. You must extract a single NPC data object "
                 f"to get a comprehensive profile of the main NPC: {self._extract_npc_name_from_url(url)}"
             ),
-            chunk_token_threshold=1000,
-            overlap_rate=0.0,
             apply_chunking=False,
             input_format="markdown",
-            extra_args={"temperature": 0.0, "max_tokens": 800},
+            extra_args={"temperature": 0.1},
         )
 
         crawl_config = CrawlerRunConfig(extraction_strategy=llm_strategy, cache_mode=CacheMode.BYPASS)
