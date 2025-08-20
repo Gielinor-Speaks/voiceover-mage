@@ -3,7 +3,7 @@ import httpx
 import pytest
 
 from voiceover_mage.npc.extractors.wiki.base import BaseWikiNPCExtractor
-from voiceover_mage.npc.models import RawNPCData
+from voiceover_mage.npc.models import NPCWikiSourcedData
 
 
 class TestUrlParsing:
@@ -55,7 +55,7 @@ class TestNPCLookup:
     def wiki_extractor(self):
         """Create concrete test implementation for HTTP testing"""
         class TestWikiExtractor(BaseWikiNPCExtractor):
-            async def extract_npc_data(self, npc_id: int) -> RawNPCData:
+            async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
                 # Minimal implementation - we're testing the base class
                 pass
         return TestWikiExtractor()
@@ -94,7 +94,7 @@ class TestNPCLookup:
         custom_client = httpx.AsyncClient()
 
         class TestExtractor(BaseWikiNPCExtractor):
-            async def extract_npc_data(self, npc_id: int) -> RawNPCData:
+            async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
                 pass
 
         extractor = TestExtractor(client=custom_client)

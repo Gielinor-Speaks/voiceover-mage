@@ -3,14 +3,14 @@
 
 from typing import Protocol
 
-from ..models import RawNPCData
+from ..models import NPCWikiSourcedData
 
 
 class NPCDataExtractor(Protocol):
     """Protocol for extracting NPC data by ID. This protocol defines the methods required for
     extracting NPC data from any data source."""
 
-    async def extract_npc_data(self, npc_id: int) -> RawNPCData:
+    async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
         """Extract NPC data from the given NPC ID.
 
         Args:

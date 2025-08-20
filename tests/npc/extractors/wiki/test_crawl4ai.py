@@ -9,7 +9,7 @@ from tenacity import RetryError
 
 from voiceover_mage.npc.extractors.base import ExtractionError
 from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
-from voiceover_mage.npc.models import Gender, RawNPCData
+from voiceover_mage.npc.models import Gender, NPCWikiSourcedData
 
 
 class TestCrawl4AINPCExtractorInitialization:
@@ -78,7 +78,7 @@ class TestCrawl4AINPCExtractorExtraction:
             result = await extractor.extract_npc_data(url)
             
             assert len(result) == 1
-            assert isinstance(result[0], RawNPCData)
+            assert isinstance(result[0], NPCWikiSourcedData)
             assert result[0].name == "Bob"
             assert result[0].gender == Gender.MALE
             assert result[0].race == "Human"

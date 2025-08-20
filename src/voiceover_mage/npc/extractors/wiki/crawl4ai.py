@@ -15,7 +15,7 @@ from voiceover_mage.lib.logging import (
 )
 from voiceover_mage.npc.extractors.base import ExtractionError
 from voiceover_mage.npc.extractors.wiki.base import BaseWikiNPCExtractor
-from voiceover_mage.npc.models import RawNPCData
+from voiceover_mage.npc.models import NPCWikiSourcedData
 
 
 class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
@@ -51,7 +51,7 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
     @retry(stop=stop_after_attempt(3))
     @log_api_call("crawl4ai")
     @log_extraction_step("extract_npc_data")
-    async def extract_npc_data(self, url: str) -> list[RawNPCData]:
+    async def extract_npc_data(self, url: str) -> list[NPCWikiSourcedData]:
         """Extract NPC data from the given URL using crawl4ai."""
         npc_name = self._extract_npc_name_from_url(url)
         
@@ -64,7 +64,7 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
         
         llm_strategy = LLMExtractionStrategy(
             llm_config=self.llm_config,
-            schema=RawNPCData.model_json_schema(),
+            schema=NPCWikiSourcedData.model_json_schema(),
             extraction_type="schema",
             instruction=(
                 f"You are provided with an NPC's web page. You must extract a single NPC data object "
@@ -125,7 +125,7 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
                 npc_objects = []
                 for i, item in enumerate(data if isinstance(data, list) else [data]):
                     try:
-                        npc_data = RawNPCData(**item)
+                        npc_data = NPCWikiSourcedData(**item)
                         npc_objects.append(npc_data)
                         self.logger.debug(
                             "Validated NPC data object",

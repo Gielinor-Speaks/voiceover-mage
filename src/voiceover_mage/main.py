@@ -18,6 +18,8 @@ from voiceover_mage.lib.logging import (
     with_npc_context,
     with_pipeline_context,
 )
+from voiceover_mage.npc.models import NPCWikiSourcedData
+
 
 # Shared options that can be used in any command
 def shared_logging_options(
@@ -79,7 +81,7 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
                 # Production mode: no progress display
                 url = await extractor._get_npc_page_url(npc_id)
                 npc_logger.debug("Retrieved NPC page URL", url=url)
-                npc_data_list = await extractor.extract_npc_data(url)
+                npc_data_list: list[NPCWikiSourcedData] = await extractor.extract_npc_data(url)
             
             if not npc_data_list:
                 npc_logger.warning("No NPC data found", npc_id=npc_id)
@@ -88,7 +90,7 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
                 return
             
             npc_logger.info("Successfully extracted NPC data", count=len(npc_data_list))
-            
+
             for npc_data in npc_data_list:
                 npc_logger.info(
                     "Processed NPC data",
@@ -98,19 +100,9 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
                 )
                 
                 if not json_output:
-                    # Interactive mode: beautiful table display
-                    table = Table(title=f"🎭 NPC Profile: {npc_data.name}", show_header=True)
-                    table.add_column("Property", style="cyan", width=15)
-                    table.add_column("Value", style="white")
-                    
-                    table.add_row("Name", npc_data.name)
-                    table.add_row("Gender", npc_data.gender.name.title())
-                    table.add_row("Race", npc_data.race)
-                    table.add_row("Location", npc_data.location)
-                    table.add_row("Examine Text", npc_data.examine_text)
-                    table.add_row("Personality", npc_data.personality)
-                    
-                    console.print(table)
+                    # Interactive mode: beautiful Pydantic model display with Rich
+                    console.print(f"\n🎭 [bold magenta]NPC Profile: {npc_data.name}[/bold magenta]")
+                    console.print(npc_data)
                     
                     if verbose:
                         console.print(Panel(

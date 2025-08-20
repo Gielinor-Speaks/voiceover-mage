@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import httpx
 
 from voiceover_mage.lib.logging import get_logger
-from voiceover_mage.npc.models import RawNPCData
+from voiceover_mage.npc.models import NPCWikiSourcedData
 
 
 class BaseWikiNPCExtractor(ABC):
@@ -22,7 +22,7 @@ class BaseWikiNPCExtractor(ABC):
         self.logger = get_logger(__name__)
 
     @abstractmethod
-    async def extract_npc_data(self, npc_id: int) -> RawNPCData:
+    async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
         """Extract NPC data from the given NPC ID."""
         pass
 
