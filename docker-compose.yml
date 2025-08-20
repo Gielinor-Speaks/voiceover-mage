@@ -1,0 +1,32 @@
+services:
+  # 🔧 Development environment
+  voiceover-mage:
+    build:
+      context: .
+      target: dev
+    container_name: voiceover-mage-dev
+    ports: ["8000:8000"]
+    volumes:
+      - .:/app
+      - /app/.venv
+    stdin_open: true
+    tty: true
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore: [".venv/", "__pycache__/", "*.pyc", ".git/", "logs/"]
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+
+  # 🚀 Production environment  
+  voiceover-mage-prod:
+    build:
+      context: .
+      target: prod
+    container_name: voiceover-mage-prod
+    ports: ["8001:8000"]
+    profiles: ["prod"]
