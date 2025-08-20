@@ -57,15 +57,25 @@
   },
 
   // Use 'postCreateCommand' to run commands after the container is created
-  "postCreateCommand": "uv sync --frozen",
+  "postCreateCommand": "chmod 700 ~/.ssh && chmod 600 ~/.ssh/* 2>/dev/null || true",
 
   // Configure container user
   "remoteUser": "app",
   "containerUser": "app",
 
-  // Persist command history and Claude Code configuration
+  // Persist command history, SSH keys, git config, and Claude Code configuration
   "mounts": [
     "source=voiceover-mage-bashhistory,target=/home/app/.bash_history,type=volume",
+    {
+      "source": "${localEnv:HOME}/.ssh",
+      "target": "/home/app/.ssh",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.gitconfig",
+      "target": "/home/app/.gitconfig",
+      "type": "bind"
+    },
     {
       "source": "${localEnv:HOME}/.claude.json",
       "target": "/home/app/.claude.json",
