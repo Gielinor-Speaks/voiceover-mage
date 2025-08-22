@@ -6,6 +6,7 @@ import io
 import logging
 import os
 import sys
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +81,7 @@ def setup_third_party_logging():
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 
-def add_correlation_id(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def add_correlation_id(logger: Any, method_name: str, event_dict: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
     """Add correlation ID to log events if not present."""
     if "correlation_id" not in event_dict:
         # Use operation context if available
@@ -89,7 +90,7 @@ def add_correlation_id(logger: Any, method_name: str, event_dict: dict[str, Any]
     return event_dict
 
 
-def add_module_context(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def add_module_context(logger: Any, method_name: str, event_dict: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
     """Add module information to log events."""
     if "module" not in event_dict:
         # Extract module from logger name
@@ -141,7 +142,7 @@ def configure_logging(mode: str | None = None, log_level: str = "INFO", log_file
                 # JSON processor chain for this handler
                 self.processor = structlog.get_logger().bind()
 
-            def format(self, record):
+            def format(self, record) -> str:
                 # Extract message and context from the log record
                 if hasattr(record, "msg") and isinstance(record.msg, dict):
                     # Structured log message
@@ -164,7 +165,8 @@ def configure_logging(mode: str | None = None, log_level: str = "INFO", log_file
 
                 # Use structlog's JSON renderer
                 json_renderer = structlog.processors.JSONRenderer()
-                return json_renderer(None, None, event_dict)
+                result = json_renderer(None, "", event_dict)
+                return str(result) if isinstance(result, bytes) else result
 
         json_handler.setFormatter(StructlogJSONFormatter())
 

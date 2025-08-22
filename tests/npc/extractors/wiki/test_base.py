@@ -2,7 +2,45 @@ import httpx
 import pytest
 
 from voiceover_mage.npc.extractors.wiki.base import BaseWikiNPCExtractor
-from voiceover_mage.npc.models import NPCWikiSourcedData
+from voiceover_mage.npc.models import NPCWikiSourcedData, TrackedField
+
+
+def _create_test_npc() -> NPCWikiSourcedData:
+    """Create a minimal test NPC with all required fields."""
+    return NPCWikiSourcedData(
+        name="Test NPC",
+        wiki_url="https://test.com/Test_NPC",
+        chathead_image_url=None,
+        image_url=None,
+        gender=TrackedField(value="male", source="default", confidence=1.0, evidence="test"),
+        race=TrackedField(value="Human", source="default", confidence=1.0, evidence="test"),
+        age_category=TrackedField(value="unknown", source="default", confidence=1.0, evidence="test"),
+        location=TrackedField(value="Test Location", source="default", confidence=1.0, evidence="test"),
+        examine_text=TrackedField(value="A test NPC", source="default", confidence=1.0, evidence="test"),
+        occupation=TrackedField(value="Tester", source="default", confidence=1.0, evidence="test"),
+        social_class=TrackedField(value="unknown", source="default", confidence=1.0, evidence="test"),
+        education_level=TrackedField(value="unknown", source="default", confidence=1.0, evidence="test"),
+        personality=TrackedField(value="Test personality", source="default", confidence=1.0, evidence="test"),
+        emotional_traits=TrackedField(value="Calm", source="default", confidence=1.0, evidence="test"),
+        notable_quirks=TrackedField(value=None, source="default", confidence=1.0, evidence="test"),
+        physical_condition=TrackedField(value="Healthy", source="default", confidence=1.0, evidence="test"),
+        mental_state=TrackedField(value="Stable", source="default", confidence=1.0, evidence="test"),
+        cultural_background=TrackedField(value="Unknown", source="default", confidence=1.0, evidence="test"),
+        accent_region=TrackedField(value="Generic", source="default", confidence=1.0, evidence="test"),
+        combat_experience=TrackedField(value="civilian", source="default", confidence=1.0, evidence="test"),
+        magical_abilities=TrackedField(value="non_magical", source="default", confidence=1.0, evidence="test"),
+        speech_formality=TrackedField(value="casual", source="default", confidence=1.0, evidence="test"),
+        vocabulary_level=TrackedField(value="average", source="default", confidence=1.0, evidence="test"),
+        speaking_pace=TrackedField(value="normal", source="default", confidence=1.0, evidence="test"),
+        voice_energy=TrackedField(value="normal", source="default", confidence=1.0, evidence="test"),
+        quest_importance=TrackedField(value="none", source="default", confidence=1.0, evidence="test"),
+        relationships=[],
+        dialogue_examples=[],
+        common_phrases=[],
+        description="Test description",
+        voice_direction="Test voice direction",
+        confidence_overall=1.0,
+    )
 
 
 class TestUrlParsing:
@@ -60,7 +98,7 @@ class TestNPCLookup:
         class TestWikiExtractor(BaseWikiNPCExtractor):
             async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
                 # Minimal implementation - we're testing the base class
-                pass
+                return _create_test_npc()
 
         return TestWikiExtractor()
 
@@ -96,7 +134,7 @@ class TestNPCLookup:
 
         class TestExtractor(BaseWikiNPCExtractor):
             async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
-                pass
+                return _create_test_npc()
 
         extractor = TestExtractor(client=custom_client)
         assert extractor.http_client is custom_client

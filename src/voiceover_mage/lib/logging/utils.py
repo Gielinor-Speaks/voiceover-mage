@@ -81,7 +81,7 @@ def with_operation_context(operation: str, **context) -> Callable[[F], F]:
                 )
                 raise
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
@@ -128,7 +128,7 @@ def with_async_operation_context(operation: str, **context) -> Callable[[F], F]:
                 )
                 raise
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
@@ -184,7 +184,7 @@ def log_api_call(api_name: str, **context) -> Callable[[F], F]:
                 )
                 raise
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
@@ -254,7 +254,7 @@ def log_extraction_step(step_name: str, npc_id: int | None = None) -> Callable[[
                 )
                 raise
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
@@ -272,7 +272,7 @@ class LogContext:
         return self.bound_logger
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
+        if exc_type is not None and self.bound_logger is not None:
             self.bound_logger.error("Context operation failed", error=str(exc_val), error_type=exc_type.__name__)
 
 

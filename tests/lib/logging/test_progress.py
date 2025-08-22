@@ -208,7 +208,8 @@ class TestSmartProgressTracker:
 
         assert self.tracker.interceptor is None
         assert mock_logger.removeHandler.called
-        assert interceptor._processing is False
+        if interceptor is not None:
+            assert interceptor._processing is False
 
     def test_update_progress_basic(self):
         """Test basic progress update."""
@@ -315,7 +316,8 @@ class TestIntegration:
                 exc_info=None,
             )
 
-            interceptor.emit(record)
+            if interceptor is not None:
+                interceptor.emit(record)
 
             # Verify progress was updated
             mock_update.assert_called()

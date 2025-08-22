@@ -73,15 +73,15 @@ async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
                 )
 
                 with progress, tracker:
-                    url = await extractor._get_npc_page_url(npc_id)
-                    npc_logger.debug("Retrieved NPC page URL", url=url)
+                    npc_data = await extractor.extract_npc_data(npc_id)
+                    npc_logger.debug("Extracted NPC data", npc_name=npc_data.name)
 
-                    npc_data_list = await extractor.extract_npc_data(url)
+                    npc_data_list = [npc_data]
             else:
                 # Production mode: no progress display
-                url = await extractor._get_npc_page_url(npc_id)
-                npc_logger.debug("Retrieved NPC page URL", url=url)
-                npc_data_list: list[NPCWikiSourcedData] = await extractor.extract_npc_data(url)
+                npc_data = await extractor.extract_npc_data(npc_id)
+                npc_logger.debug("Extracted NPC data", npc_name=npc_data.name)
+                npc_data_list: list[NPCWikiSourcedData] = [npc_data]
 
             if not npc_data_list:
                 npc_logger.warning("No NPC data found", npc_id=npc_id)
@@ -152,15 +152,12 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                     # Step 1: Extract NPC data
                     config = get_config()
                     extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
-                    url = await extractor._get_npc_page_url(npc_id)
-                    npc_data_list = await extractor.extract_npc_data(url)
+                    npc_data = await extractor.extract_npc_data(npc_id)
 
-                    if not npc_data_list:
+                    if not npc_data:
                         pipeline_logger.warning("No NPC data found in pipeline", npc_id=npc_id)
                         console.print("[red]❌ No NPC data found[/red]")
                         return
-
-                    npc_data = npc_data_list[0]  # Use first result
                     pipeline_logger.info("Extracted NPC data in pipeline", npc_name=npc_data.name)
 
                     # Update progress for character analysis step
@@ -176,14 +173,11 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                 # Production mode: no progress display
                 config = get_config()
                 extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
-                url = await extractor._get_npc_page_url(npc_id)
-                npc_data_list = await extractor.extract_npc_data(url)
+                npc_data = await extractor.extract_npc_data(npc_id)
 
-                if not npc_data_list:
+                if not npc_data:
                     pipeline_logger.warning("No NPC data found in pipeline", npc_id=npc_id)
                     return
-
-                npc_data = npc_data_list[0]  # Use first result
                 pipeline_logger.info("Extracted NPC data in pipeline", npc_name=npc_data.name)
                 pipeline_logger.info("Character analysis step", step="analysis")
 

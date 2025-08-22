@@ -44,10 +44,18 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
 
         self.logger.info("Initialized Crawl4AI extractor", llm_provider=llm_provider, headless=headless)
 
+    async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
+        """Extract NPC data from the given NPC ID using crawl4ai."""
+        url = await self._get_npc_page_url(npc_id)
+        npc_list = await self._extract_npc_data_from_url(url)
+        if not npc_list:
+            raise ExtractionError(f"No NPC data found for ID {npc_id}")
+        return npc_list[0]  # Return the first NPC found
+
     @retry(stop=stop_after_attempt(3))
     @log_api_call("crawl4ai")
-    @log_extraction_step("extract_npc_data")
-    async def extract_npc_data(self, url: str) -> list[NPCWikiSourcedData]:
+    @log_extraction_step("extract_npc_data_from_url")
+    async def _extract_npc_data_from_url(self, url: str) -> list[NPCWikiSourcedData]:
         """Extract NPC data from the given URL using crawl4ai."""
         npc_name = self._extract_npc_name_from_url(url)
 
@@ -77,27 +85,29 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
             # Suppress all console output from crawl4ai
             with suppress_library_output():
                 async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                    result = await crawler.arun(url=url, config=crawl_config)
+                    result = await crawler.arun(url=url, config=crawl_config)  # type: ignore[assignment]
+                    # Type assertion to help pyright understand the return type
+                    assert hasattr(result, "success"), "Expected CrawlResult object"
 
                 if not result:
                     self.logger.error("Crawling failed: No result returned", url=url)
                     raise ExtractionError("Crawling failed: No result returned")
 
-                elif not result.success:
-                    self.logger.error("Crawling failed with error", url=url, error_message=result.error_message)
-                    raise ExtractionError(f"Crawling failed: {result.error_message}")
+                elif not result.success:  # type: ignore[attr-defined]
+                    self.logger.error("Crawling failed with error", url=url, error_message=result.error_message)  # type: ignore[attr-defined]
+                    raise ExtractionError(f"Crawling failed: {result.error_message}")  # type: ignore[attr-defined]
 
                 self.logger.debug(
                     "Crawling successful, parsing extracted content",
-                    content_length=len(result.extracted_content) if result.extracted_content else 0,
+                    content_length=len(result.extracted_content) if result.extracted_content else 0,  # type: ignore[attr-defined]
                 )
 
                 try:
-                    data = json.loads(result.extracted_content)
+                    data = json.loads(result.extracted_content)  # type: ignore[attr-defined]
                 except json.JSONDecodeError as e:
                     self.logger.error(
                         "Failed to parse JSON from extracted content",
-                        content_preview=result.extracted_content[:200] if result.extracted_content else None,
+                        content_preview=result.extracted_content[:200] if result.extracted_content else None,  # type: ignore[attr-defined]
                         json_error=str(e),
                     )
                     raise ExtractionError(f"Failed to parse extracted content as JSON: {e}") from e
