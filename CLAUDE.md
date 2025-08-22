@@ -12,3 +12,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **CRITICAL: When in doubt and working with any and I mean ANY external library refer to relevant docs to prime your context using the Context7 MCP server.**
 - Make sure you are saving out updates to the development plan (can usually be found in @./.agent/steering/development-plan-*.md) each time you finish an item.
+
+**CRITICAL: !!!ALWAYS WRITE TESTS FIRST!!!**
