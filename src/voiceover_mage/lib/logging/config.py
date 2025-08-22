@@ -14,13 +14,14 @@ import structlog
 
 class LoggingMode:
     """Logging mode constants."""
+
     INTERACTIVE = "interactive"
     PRODUCTION = "production"
 
 
 def detect_logging_mode() -> str:
     """Detect whether we're running in interactive or production mode.
-    
+
     Returns:
         LoggingMode constant indicating the detected mode
     """
@@ -28,11 +29,11 @@ def detect_logging_mode() -> str:
     mode = os.getenv("VOICEOVER_MAGE_LOG_MODE")
     if mode and mode.lower() in [LoggingMode.INTERACTIVE, LoggingMode.PRODUCTION]:
         return mode.lower()
-    
+
     # Check if stdout is a TTY (interactive terminal)
     if sys.stdout.isatty():
         return LoggingMode.INTERACTIVE
-    
+
     # Default to production for non-TTY environments
     return LoggingMode.PRODUCTION
 
@@ -51,29 +52,29 @@ def setup_third_party_logging():
     logging.getLogger("crawl4ai.web_crawler").setLevel(logging.CRITICAL)
     logging.getLogger("crawl4ai.chunking_strategy").setLevel(logging.CRITICAL)
     logging.getLogger("crawl4ai.extraction_strategy").setLevel(logging.CRITICAL)
-    
+
     # Silence LiteLLM (used by crawl4ai)
     logging.getLogger("LiteLLM").setLevel(logging.CRITICAL)
     logging.getLogger("litellm").setLevel(logging.CRITICAL)
-    
+
     # Silence browser automation libraries
     logging.getLogger("selenium").setLevel(logging.CRITICAL)
     logging.getLogger("playwright").setLevel(logging.CRITICAL)
     logging.getLogger("undetected_chromedriver").setLevel(logging.CRITICAL)
-    
+
     # Control httpx and httpcore output
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    
+
     # Capture warnings
     logging.captureWarnings(True)
     logging.getLogger("py.warnings").setLevel(logging.ERROR)
-    
+
     # Silence other potential noisy libraries
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
-    
+
     # Disable specific chatty loggers
     logging.getLogger("websockets").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
@@ -100,13 +101,9 @@ def add_module_context(logger: Any, method_name: str, event_dict: dict[str, Any]
     return event_dict
 
 
-def configure_logging(
-    mode: str | None = None,
-    log_level: str = "INFO",
-    log_file: str | None = None
-) -> None:
+def configure_logging(mode: str | None = None, log_level: str = "INFO", log_file: str | None = None) -> None:
     """Configure logging for the application.
-    
+
     Args:
         mode: Logging mode (interactive/production), auto-detected if None
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -114,13 +111,13 @@ def configure_logging(
     """
     if mode is None:
         mode = detect_logging_mode()
-    
+
     # Set up third-party library logging
     setup_third_party_logging()
-    
+
     # Convert log level string to logging constant
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
-    
+
     if mode == LoggingMode.INTERACTIVE:
         # Create log directory only for interactive mode
         log_dir = create_log_directory()
@@ -128,51 +125,53 @@ def configure_logging(
         log_file_path = log_file or str(log_dir / "voiceover-mage.log")
         json_log_path = str(log_dir / "voiceover-mage.json")
         error_log_path = str(log_dir / "errors.log")
-        
+
         # Configure file handler for human-readable logs
         file_handler = logging.FileHandler(log_file_path)
         file_handler.setLevel(numeric_level)
-        
+
         # Configure JSON file handler for machine-readable logs using structlog
         json_handler = logging.FileHandler(json_log_path)
         json_handler.setLevel(numeric_level)
-        
+
         # Create a custom formatter that outputs JSON using structlog
         class StructlogJSONFormatter(logging.Formatter):
             def __init__(self):
                 super().__init__()
                 # JSON processor chain for this handler
                 self.processor = structlog.get_logger().bind()
-                
+
             def format(self, record):
                 # Extract message and context from the log record
-                if hasattr(record, 'msg') and isinstance(record.msg, dict):
+                if hasattr(record, "msg") and isinstance(record.msg, dict):
                     # Structured log message
                     event_dict = record.msg.copy()
-                    event_dict.update({
-                        'timestamp': self.formatTime(record),
-                        'logger': record.name,
-                        'level': record.levelname,
-                    })
+                    event_dict.update(
+                        {
+                            "timestamp": self.formatTime(record),
+                            "logger": record.name,
+                            "level": record.levelname,
+                        }
+                    )
                 else:
                     # Plain text message
                     event_dict = {
-                        'timestamp': self.formatTime(record),
-                        'logger': record.name, 
-                        'level': record.levelname,
-                        'message': record.getMessage(),
+                        "timestamp": self.formatTime(record),
+                        "logger": record.name,
+                        "level": record.levelname,
+                        "message": record.getMessage(),
                     }
-                
+
                 # Use structlog's JSON renderer
                 json_renderer = structlog.processors.JSONRenderer()
                 return json_renderer(None, None, event_dict)
-        
+
         json_handler.setFormatter(StructlogJSONFormatter())
-        
+
         # Configure error-only handler
         error_handler = logging.FileHandler(error_log_path)
         error_handler.setLevel(logging.ERROR)
-        
+
         # Configure structlog for beautiful file output
         structlog.configure(
             processors=[
@@ -181,24 +180,24 @@ def configure_logging(
                 add_module_context,
                 structlog.processors.add_log_level,
                 structlog.processors.TimeStamper(fmt="ISO"),
-                structlog.dev.ConsoleRenderer(colors=False)  # No colors in file logs
+                structlog.dev.ConsoleRenderer(colors=False),  # No colors in file logs
             ],
             wrapper_class=structlog.stdlib.BoundLogger,
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             cache_logger_on_first_use=True,
         )
-        
+
         # Set up standard library logging
         logging.basicConfig(
             level=numeric_level,
             handlers=[file_handler, json_handler, error_handler],
-            format="%(message)s"  # structlog handles formatting
+            format="%(message)s",  # structlog handles formatting
         )
-        
+
         # Explicitly set root logger level in case basicConfig didn't apply it
         logging.getLogger().setLevel(numeric_level)
-        
+
     else:
         # Production mode: JSON logs to stdout, no file logging
         structlog.configure(
@@ -208,24 +207,24 @@ def configure_logging(
                 add_module_context,
                 structlog.processors.add_log_level,
                 structlog.processors.TimeStamper(fmt="ISO"),
-                structlog.processors.JSONRenderer()
+                structlog.processors.JSONRenderer(),
             ],
             wrapper_class=structlog.stdlib.BoundLogger,
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             cache_logger_on_first_use=True,
         )
-        
+
         # Configure stdout output (structlog JSONRenderer handles JSON formatting)
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(numeric_level)
-        
+
         logging.basicConfig(
             level=numeric_level,
             handlers=[handler],
-            format="%(message)s"  # structlog handles all formatting
+            format="%(message)s",  # structlog handles all formatting
         )
-        
+
         # Explicitly set root logger level in case basicConfig didn't apply it
         logging.getLogger().setLevel(numeric_level)
 
@@ -234,7 +233,7 @@ def get_logging_status() -> dict[str, Any]:
     """Get current logging configuration status."""
     mode = detect_logging_mode()
     log_dir = Path("logs")
-    
+
     return {
         "mode": mode,
         "log_directory": str(log_dir.absolute()) if log_dir.exists() else None,
@@ -244,22 +243,29 @@ def get_logging_status() -> dict[str, Any]:
             "errors": str(log_dir / "errors.log") if mode == LoggingMode.INTERACTIVE else None,
         },
         "third_party_suppressed": [
-            "crawl4ai", "httpx", "urllib3", "requests", "py.warnings", "LiteLLM", "selenium", "playwright"
-        ]
+            "crawl4ai",
+            "httpx",
+            "urllib3",
+            "requests",
+            "py.warnings",
+            "LiteLLM",
+            "selenium",
+            "playwright",
+        ],
     }
 
 
 @contextlib.contextmanager
 def suppress_library_output():
     """Context manager to completely suppress stdout/stderr from noisy libraries.
-    
+
     Use this around crawl4ai operations to prevent any console output from
     bleeding through, including progress bars and status messages.
     """
     # Save original stdout/stderr
     original_stdout = sys.stdout
     original_stderr = sys.stderr
-    
+
     try:
         # Redirect to null device
         sys.stdout = io.StringIO()

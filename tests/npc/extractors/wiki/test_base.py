@@ -1,4 +1,3 @@
-
 import httpx
 import pytest
 
@@ -9,15 +8,18 @@ from voiceover_mage.npc.models import NPCWikiSourcedData
 class TestUrlParsing:
     """Test static URL parsing methods - no HTTP calls, pure logic"""
 
-    @pytest.mark.parametrize("url,expected_name,expected_variant", [
-        ("https://oldschool.runescape.wiki/w/Bob#Variant", "Bob", "Variant"),
-        ("https://oldschool.runescape.wiki/w/Alice", "Alice", None),
-        ("https://oldschool.runescape.wiki/w/Complex_Name#Old", "Complex_Name", "Old"),
-        ("https://oldschool.runescape.wiki/w/Makeover_Mage", "Makeover_Mage", None),
-        ("invalid-url", None, None),
-        ("", None, None),
-        (None, None, None),
-    ])
+    @pytest.mark.parametrize(
+        "url,expected_name,expected_variant",
+        [
+            ("https://oldschool.runescape.wiki/w/Bob#Variant", "Bob", "Variant"),
+            ("https://oldschool.runescape.wiki/w/Alice", "Alice", None),
+            ("https://oldschool.runescape.wiki/w/Complex_Name#Old", "Complex_Name", "Old"),
+            ("https://oldschool.runescape.wiki/w/Makeover_Mage", "Makeover_Mage", None),
+            ("invalid-url", None, None),
+            ("", None, None),
+            (None, None, None),
+        ],
+    )
     def test_url_parsing(self, url, expected_name, expected_variant):
         assert BaseWikiNPCExtractor._extract_npc_name_from_url(url) == expected_name
         assert BaseWikiNPCExtractor._extract_npc_variant_from_url(url) == expected_variant
@@ -29,7 +31,7 @@ class TestUrlParsing:
             ("Simple_Name", "Simple_Name"),
             ("", None),
             (None, None),
-        ]
+        ],
     )
     def test_name_from_title(self, title, expected_name):
         assert BaseWikiNPCExtractor._extract_npc_name_from_title(title) == expected_name
@@ -42,7 +44,7 @@ class TestUrlParsing:
             ("Simple_Name", None),
             ("", None),
             (None, None),
-        ]
+        ],
     )
     def test_variant_from_title(self, title, expected_variant):
         assert BaseWikiNPCExtractor._extract_npc_variant_from_title(title) == expected_variant
@@ -54,10 +56,12 @@ class TestNPCLookup:
     @pytest.fixture
     def wiki_extractor(self):
         """Create concrete test implementation for HTTP testing"""
+
         class TestWikiExtractor(BaseWikiNPCExtractor):
             async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
                 # Minimal implementation - we're testing the base class
                 pass
+
         return TestWikiExtractor()
 
     @pytest.mark.asyncio
@@ -66,14 +70,11 @@ class TestNPCLookup:
         httpx_mock.add_response(
             url="https://oldschool.runescape.wiki/w/Special:Lookup?type=npc&id=123",
             status_code=302,
-            headers={"Location": "https://oldschool.runescape.wiki/w/Bob"}
+            headers={"Location": "https://oldschool.runescape.wiki/w/Bob"},
         )
 
         # Final PAGE
-        httpx_mock.add_response(
-            url="https://oldschool.runescape.wiki/w/Bob",
-            status_code=200
-        )
+        httpx_mock.add_response(url="https://oldschool.runescape.wiki/w/Bob", status_code=200)
 
         url = await wiki_extractor._get_npc_page_url(123)
         assert "Bob" in url

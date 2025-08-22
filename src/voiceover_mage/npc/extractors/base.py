@@ -27,4 +27,5 @@ class NPCDataExtractor(Protocol):
 
 class ExtractionError(Exception):
     """Raised when NPC data extraction fails."""
+
     pass
