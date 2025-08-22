@@ -5,11 +5,15 @@ description = "🧙‍♂️ AI voice generation system for Old School RuneScape
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiosqlite>=0.20.0",
     "crawl4ai>=0.7.3",
+    "cssselect>=1.3.0",
+    "dspy>=3.0.1",
     "httpx>=0.28.1",
     "pydantic>=2.11.7",
     "pydantic-settings>=2.10.1",
     "rich>=14.1.0",
+    "sqlmodel>=0.0.22",
     "structlog>=24.1.0",
     "tenacity>=9.1.2",
     "typer>=0.16.0",

@@ -22,6 +22,12 @@ class Config(BaseSettings):
     # AI/API Configuration
     gemini_api_key: str = Field(default="", description="Google Gemini API key for NPC data extraction")
 
+    # Database Configuration
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./npc_data.db", description="Database URL for async SQLite operations"
+    )
+    cache_enabled: bool = Field(default=True, description="Enable caching of NPC extractions")
+
     # Logging Configuration
     log_mode: Literal["interactive", "production"] = Field(default="interactive", description="Logging output mode")
 
