@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING
 
 from sqlmodel import JSON, Column, Field, SQLModel
 
+from voiceover_mage.core.models import NPCWikiSourcedData
+from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
+from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
+from voiceover_mage.persistence.json_types import PydanticJson
+
 if TYPE_CHECKING:
     from voiceover_mage.core.models import ExtractionStage
 
@@ -35,11 +41,19 @@ class NPCRawExtraction(SQLModel, table=True):
     chathead_image_url: str | None = Field(default=None, description="URL to the NPC's chathead image")
     image_url: str | None = Field(default=None, description="URL to the NPC's main/body image")
 
-    # Pipeline stage management
-    raw_data: dict = Field(default_factory=dict, sa_column=Column(JSON), description="Raw extracted data")
-    text_analysis: dict = Field(default_factory=dict, sa_column=Column(JSON), description="Text analysis results")
-    visual_analysis: dict = Field(default_factory=dict, sa_column=Column(JSON), description="Visual analysis results")
-    character_profile: dict = Field(default_factory=dict, sa_column=Column(JSON), description="Character profile data")
+    # Pipeline stage management with type-safe JSON columns
+    raw_data: NPCWikiSourcedData | None = Field(
+        default=None, sa_column=Column(PydanticJson(NPCWikiSourcedData)), description="Raw extracted data"
+    )
+    text_analysis: NPCTextCharacteristics | None = Field(
+        default=None, sa_column=Column(PydanticJson(NPCTextCharacteristics)), description="Text analysis results"
+    )
+    visual_analysis: NPCVisualCharacteristics | None = Field(
+        default=None, sa_column=Column(PydanticJson(NPCVisualCharacteristics)), description="Visual analysis results"
+    )
+    character_profile: NPCDetails | None = Field(
+        default=None, sa_column=Column(PydanticJson(NPCDetails)), description="Character profile data"
+    )
     completed_stages: list[str] = Field(
         default_factory=list, sa_column=Column(JSON), description="Completed pipeline stages"
     )
@@ -65,28 +79,11 @@ class NPCRawExtraction(SQLModel, table=True):
         return stage.value in self.completed_stages
 
 
-# TODO: Enhanced pipeline model with checkpoint support
-# This will be implemented in Phase 4 with proper TypeAdapter JSON columns:
+# NOTE: TypeAdapter JSON columns now implemented above!
+# This model demonstrates the TypeAdapter pattern in action with:
+# - NPCWikiSourcedData for raw_data column
+# - NPCTextCharacteristics for text_analysis column
+# - NPCVisualCharacteristics for visual_analysis column
+# - NPCDetails for character_profile column
 #
-# class NPCExtraction(SQLModel, table=True):
-#     """Enhanced pipeline model with checkpoints."""
-#     __tablename__ = "npc_extractions"
-#
-#     id: int | None = Field(primary_key=True, default=None)
-#     npc_id: int = Field(index=True)
-#     npc_name: str
-#     current_stage: ExtractionStage
-#
-#     # Checkpoint data with proper TypeAdapter
-#     raw_data: NPCRawExtractionData | None = Field(
-#         default=None,
-#         sa_column=Column(PydanticJson(NPCRawExtractionData))
-#     )
-#     text_analysis: NPCTextCharacteristics | None = Field(
-#         default=None,
-#         sa_column=Column(PydanticJson(NPCTextCharacteristics))
-#     )
-#     visual_analysis: NPCVisualCharacteristics | None = Field(
-#         default=None,
-#         sa_column=Column(PydanticJson(NPCVisualCharacteristics))
-#     )
+# See: https://github.com/fastapi/sqlmodel/issues/63#issuecomment-2727480036

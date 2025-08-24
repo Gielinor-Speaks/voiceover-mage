@@ -13,17 +13,18 @@ from voiceover_mage.extraction.wiki.crawl4ai import Crawl4AINPCExtractor
 from voiceover_mage.persistence.manager import DatabaseManager
 from voiceover_mage.persistence.models import NPCRawExtraction
 from voiceover_mage.utils.logging import get_logger
+from voiceover_mage.utils.retry import LLMAPIError, llm_retry
 
 
 class UnifiedPipelineService:
     """Unified service that coordinates all NPC extraction and analysis stages.
 
     This service manages the complete pipeline:
-    1. Raw extraction (basic markdown + images)
-    2. Intelligent extraction (text + visual analysis)
-    3. Synthesis (character profile generation)
+    1. Raw extraction (basic markdown + images) → NPCWikiSourcedData
+    2. Intelligent extraction (text + visual analysis) → NPCTextCharacteristics + NPCVisualCharacteristics
+    3. Synthesis (character profile generation) → NPCDetails
 
-    Each stage is saved to the database with proper tracking.
+    Each stage uses TypeAdapter for type-safe JSON database storage.
     """
 
     def __init__(
@@ -122,8 +123,8 @@ class UnifiedPipelineService:
             crawl_extractor = Crawl4AINPCExtractor(api_key=self.api_key)
             wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(extraction.npc_id)
 
-            # Convert to dict for storage
-            extraction.raw_data = wiki_data.model_dump()
+            # Store NPCWikiSourcedData directly with TypeAdapter
+            extraction.raw_data = wiki_data
             extraction.add_stage(ExtractionStage.TEXT)
             await self._save_extraction(extraction)
 
@@ -149,37 +150,26 @@ class UnifiedPipelineService:
         )
 
         try:
-            # Run individual text and image extraction to capture intermediate results
-            text_characteristics = cast(
-                NPCTextCharacteristics,
-                self.intelligent_extractor.text_extractor(
-                    markdown_content=extraction.raw_markdown, npc_name=extraction.npc_name
-                ),
+            # Run text and image analysis with retry logic
+            text_characteristics = await self._run_text_analysis_with_retry(
+                extraction.raw_markdown, extraction.npc_name
             )
 
-            image_characteristics = cast(
-                NPCVisualCharacteristics,
-                self.intelligent_extractor.image_extractor(
-                    markdown_content=extraction.raw_markdown, npc_name=extraction.npc_name
-                ),
+            image_characteristics = await self._run_image_analysis_with_retry(
+                extraction.raw_markdown, extraction.npc_name
             )
 
-            # Store intermediate analysis results
-            extraction.text_analysis = text_characteristics.model_dump()
-            extraction.visual_analysis = image_characteristics.model_dump()
+            # Store analysis results directly with TypeAdapter
+            extraction.text_analysis = text_characteristics
+            extraction.visual_analysis = image_characteristics
 
-            # Synthesize into final profile
-            npc_details = cast(
-                NPCDetails,
-                self.intelligent_extractor.synthesizer(
-                    text_characteristics=text_characteristics,
-                    visual_characteristics=image_characteristics,
-                    npc_name=extraction.npc_name,
-                ),
+            # Synthesize into final profile with retry logic
+            npc_details = await self._run_synthesis_with_retry(
+                text_characteristics, image_characteristics, extraction.npc_name
             )
 
-            # Store the synthesized character profile
-            extraction.character_profile = npc_details.model_dump()
+            # Store the synthesized character profile directly with TypeAdapter
+            extraction.character_profile = npc_details
 
             # Mark stages complete
             extraction.add_stage(ExtractionStage.TEXT)
@@ -196,6 +186,15 @@ class UnifiedPipelineService:
                 occupation=npc_details.occupation,
                 overall_confidence=npc_details.overall_confidence,
             )
+        except LLMAPIError as e:
+            # Handle LLM-specific errors with appropriate logging
+            self.logger.error(
+                "LLM API failure during intelligent analysis",
+                npc_id=extraction.npc_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            # Continue pipeline - don't fail completely on LLM errors
         except Exception as e:
             import traceback
 
@@ -210,14 +209,67 @@ class UnifiedPipelineService:
 
         return extraction
 
+    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
+    async def _run_text_analysis_with_retry(self, markdown: str, npc_name: str) -> NPCTextCharacteristics:
+        """Run text analysis with retry logic."""
+        self.logger.debug("Running text analysis with retry protection", npc_name=npc_name)
+
+        # Run synchronously but wrap in async for retry decorator
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+
+        result = await loop.run_in_executor(
+            None, lambda: self.intelligent_extractor.text_extractor(markdown_content=markdown, npc_name=npc_name)
+        )
+
+        return cast(NPCTextCharacteristics, result)
+
+    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
+    async def _run_image_analysis_with_retry(self, markdown: str, npc_name: str) -> NPCVisualCharacteristics:
+        """Run image analysis with retry logic."""
+        self.logger.debug("Running image analysis with retry protection", npc_name=npc_name)
+
+        # Run synchronously but wrap in async for retry decorator
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+
+        result = await loop.run_in_executor(
+            None, lambda: self.intelligent_extractor.image_extractor(markdown_content=markdown, npc_name=npc_name)
+        )
+
+        return cast(NPCVisualCharacteristics, result)
+
+    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
+    async def _run_synthesis_with_retry(
+        self,
+        text_characteristics: NPCTextCharacteristics,
+        image_characteristics: NPCVisualCharacteristics,
+        npc_name: str,
+    ) -> NPCDetails:
+        """Run character synthesis with retry logic."""
+        self.logger.debug("Running synthesis with retry protection", npc_name=npc_name)
+
+        # Run synchronously but wrap in async for retry decorator
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+
+        result = await loop.run_in_executor(
+            None,
+            lambda: self.intelligent_extractor.synthesizer(
+                text_characteristics=text_characteristics,
+                visual_characteristics=image_characteristics,
+                npc_name=npc_name,
+            ),
+        )
+
+        return cast(NPCDetails, result)
+
     async def _save_extraction(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
         """Save extraction to database."""
-        async with self.database.async_session() as session:
-            # Merge to update existing record
-            merged = await session.merge(extraction)
-            await session.commit()
-            await session.refresh(merged)
-            return merged
+        return await self.database.save_extraction(extraction)
 
     async def get_extraction_status(self, npc_id: int) -> dict:
         """Get the current status of an extraction."""

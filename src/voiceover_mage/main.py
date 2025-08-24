@@ -133,11 +133,11 @@ async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refres
                     )
 
                 if verbose:
-                    # Show simple image URLs
-                    if extraction.raw_data and extraction.raw_data.get("chathead_image_url"):
-                        console.print(f"🖼️ Chathead: {extraction.raw_data['chathead_image_url']}")
-                    if extraction.raw_data and extraction.raw_data.get("image_url"):
-                        console.print(f"🖼️ Main Image: {extraction.raw_data['image_url']}")
+                    # Show simple image URLs from extraction metadata
+                    if extraction.chathead_image_url:
+                        console.print(f"🖼️ Chathead: {extraction.chathead_image_url}")
+                    if extraction.image_url:
+                        console.print(f"🖼️ Main Image: {extraction.image_url}")
 
             await service.close()
 
@@ -208,7 +208,7 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
 
                 # Display character profile if available
                 if extraction.character_profile:
-                    _display_character_profile_summary(extraction.character_profile)
+                    _display_character_profile_summary(extraction.character_profile.model_dump())
 
             else:
                 # Production mode: no progress display

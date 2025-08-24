@@ -4,7 +4,6 @@
 import json
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig, LLMConfig, LLMExtractionStrategy
-from tenacity import retry, stop_after_attempt
 
 from voiceover_mage.config import get_config
 from voiceover_mage.core.models import NPCWikiSourcedData
@@ -18,6 +17,7 @@ from voiceover_mage.utils.logging import (
     log_extraction_step,
     suppress_library_output,
 )
+from voiceover_mage.utils.retry import LLMAPIError, llm_retry
 
 
 class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
@@ -54,7 +54,7 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
             raise ExtractionError(f"No NPC data found for ID {npc_id}")
         return npc_list[0]  # Return the first NPC found
 
-    @retry(stop=stop_after_attempt(3))
+    @llm_retry(max_attempts=3, min_wait=2.0, max_wait=30.0, with_rate_limiting=True, with_circuit_breaker=True)
     @log_api_call("crawl4ai")
     @log_extraction_step("extract_npc_data_from_url")
     async def _extract_npc_data_from_url(self, url: str) -> list[NPCWikiSourcedData]:
@@ -143,7 +143,25 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
                 return npc_objects
 
         except Exception as e:
-            if isinstance(e, ExtractionError):
+            if isinstance(e, ExtractionError | LLMAPIError):
                 raise
-            self.logger.error("Unexpected error during extraction", error=str(e), error_type=type(e).__name__, url=url)
-            raise ExtractionError(f"Unexpected error during extraction: {e}") from e
+
+            # Convert to appropriate LLM error types for better retry handling
+            error_str = str(e).lower()
+            if "rate limit" in error_str or "429" in error_str:
+                self.logger.error("Rate limit exceeded during extraction", error=str(e), url=url)
+                raise LLMAPIError(f"Rate limit exceeded: {e}") from e
+            elif "quota" in error_str or "billing" in error_str:
+                self.logger.error("API quota exceeded during extraction", error=str(e), url=url)
+                raise LLMAPIError(f"API quota exceeded: {e}") from e
+            elif "timeout" in error_str:
+                self.logger.error("Timeout during extraction", error=str(e), url=url)
+                raise LLMAPIError(f"Request timeout: {e}") from e
+            elif "connection" in error_str or "network" in error_str:
+                self.logger.error("Connection failed during extraction", error=str(e), url=url)
+                raise LLMAPIError(f"Connection failed: {e}") from e
+            else:
+                self.logger.error(
+                    "Unexpected error during extraction", error=str(e), error_type=type(e).__name__, url=url
+                )
+                raise ExtractionError(f"Unexpected error during extraction: {e}") from e

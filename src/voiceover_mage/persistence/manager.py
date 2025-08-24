@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from voiceover_mage.core.models import ExtractionStage
+from voiceover_mage.core.models import ExtractionStage, NPCWikiSourcedData
+from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
+from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.persistence.models import NPCRawExtraction as NPCExtraction
 
 
@@ -54,24 +57,33 @@ class DatabaseManager:
             return result.first()
 
     async def save_extraction(self, extraction: NPCExtraction) -> NPCExtraction:
-        """Save an extraction to the database.
-
-        For caching purposes, if an extraction with the same npc_id already exists,
-        this will return the existing one without updating it.
+        """Save or update an extraction in the database.
 
         Args:
-            extraction: The extraction to save
+            extraction: The extraction to save or update
 
         Returns:
-            The saved extraction (or existing one if cached)
+            The saved/updated extraction
         """
-        # Check if already exists (for caching)
-        existing = await self.get_cached_extraction(extraction.npc_id)
-        if existing:
-            return existing
-
         async with self.async_session() as session:
-            session.add(extraction)
+            # Check if this is an existing extraction (has an ID)
+            if extraction.id is not None:
+                # This is an update - merge the changes
+                session.add(extraction)
+            else:
+                # This is a new extraction - check if one exists with same npc_id
+                existing = await self.get_cached_extraction(extraction.npc_id)
+                if existing:
+                    # Update the existing one
+                    for field_name in extraction.model_fields:
+                        if hasattr(extraction, field_name):
+                            setattr(existing, field_name, getattr(extraction, field_name))
+                    session.add(existing)
+                    extraction = existing
+                else:
+                    # Add new extraction
+                    session.add(extraction)
+
             await session.commit()
             await session.refresh(extraction)
             return extraction
@@ -96,7 +108,13 @@ class DatabaseManager:
         await self.engine.dispose()
 
     async def save_raw_data(
-        self, npc_id: int, npc_name: str, raw_data: dict, npc_variant: str | None = None
+        self,
+        npc_id: int,
+        npc_name: str,
+        raw_data: NPCWikiSourcedData,
+        npc_variant: str | None = None,
+        wiki_url: str = "",
+        raw_markdown: str = "",
     ) -> NPCExtraction:
         """Save raw extraction data, creating new record if needed."""
         existing = await self.get_cached_extraction(npc_id)
@@ -109,28 +127,33 @@ class DatabaseManager:
                 npc_id=npc_id,
                 npc_name=npc_name,
                 npc_variant=npc_variant,
-                wiki_url=raw_data.get("wiki_url", ""),
-                raw_markdown=raw_data.get("raw_markdown", ""),
+                wiki_url=wiki_url,
+                raw_markdown=raw_markdown,
                 raw_data=raw_data,
                 completed_stages=[ExtractionStage.RAW],
             )
 
         return await self.save_extraction(existing)
 
-    async def update_stage_data(self, npc_id: int, stage: ExtractionStage, data: dict) -> NPCExtraction | None:
+    async def update_stage_data(
+        self, npc_id: int, stage: ExtractionStage, data: NPCTextCharacteristics | NPCVisualCharacteristics | NPCDetails
+    ) -> NPCExtraction | None:
         """Update a specific pipeline stage with data."""
         extraction = await self.get_cached_extraction(npc_id)
         if not extraction:
             return None
 
         if stage == ExtractionStage.TEXT:
-            extraction.text_analysis = data
+            if isinstance(data, NPCTextCharacteristics):
+                extraction.text_analysis = data
+                extraction.add_stage(stage)
         elif stage == ExtractionStage.VISUAL:
-            extraction.visual_analysis = data
-        elif stage == ExtractionStage.PROFILE:
+            if isinstance(data, NPCVisualCharacteristics):
+                extraction.visual_analysis = data
+                extraction.add_stage(stage)
+        elif stage == ExtractionStage.PROFILE and isinstance(data, NPCDetails):
             extraction.character_profile = data
-
-        extraction.add_stage(stage)
+            extraction.add_stage(stage)
         return await self.save_extraction(extraction)
 
     async def get_incomplete_extractions(self, missing_stage: ExtractionStage) -> list[NPCExtraction]:
