@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from tenacity import RetryError
 
-from voiceover_mage.npc.extractors.base import ExtractionError
-from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
-from voiceover_mage.npc.models import NPCWikiSourcedData
+from voiceover_mage.core.models import NPCWikiSourcedData
+from voiceover_mage.extraction.base import ExtractionError
+from voiceover_mage.extraction.wiki.crawl4ai import Crawl4AINPCExtractor
 
 
 class TestCrawl4AINPCExtractorInitialization:
@@ -49,80 +49,43 @@ class TestCrawl4AINPCExtractorInitialization:
 
 
 def _create_complete_npc_data(name: str, custom_fields: dict | None = None) -> dict:
-    """Create complete NPC data as it would come from crawl4ai JSON response."""
+    """Create complete NPC data matching the new NPCWikiSourcedData model structure."""
     base_data = {
-        "name": name,
-        "wiki_url": f"https://oldschool.runescape.wiki/w/{name}",
-        "chathead_image_url": None,
-        "image_url": None,
-        "gender": {"value": "male", "source": "explicit", "confidence": 0.9, "evidence": "Male NPC"},
-        "race": {"value": "Human", "source": "explicit", "confidence": 0.9, "evidence": "Human race"},
-        "age_category": {
-            "value": "young_adult",
+        "name": {"value": name, "source": "explicit", "confidence": 1.0, "evidence": f"NPC name: {name}"},
+        "variant": {"value": None, "source": "default", "confidence": 1.0, "evidence": "No variant specified"},
+        "occupation": {
+            "value": "Worker",
             "source": "inferred",
             "confidence": 0.8,
-            "evidence": "Adult appearance",
+            "evidence": "Appears to be a worker",
         },
-        "location": {"value": "Lumbridge", "source": "explicit", "confidence": 1.0, "evidence": "Lives in Lumbridge"},
-        "examine_text": {"value": "A test NPC.", "source": "explicit", "confidence": 1.0, "evidence": "Examine text"},
-        "occupation": {"value": "Worker", "source": "inferred", "confidence": 0.9, "evidence": "Working NPC"},
-        "social_class": {"value": "commoner", "source": "inferred", "confidence": 0.7, "evidence": "Manual labor"},
-        "education_level": {"value": "basic", "source": "inferred", "confidence": 0.6, "evidence": "Basic occupation"},
-        "personality": {
-            "value": "Friendly",
-            "source": "inferred",
-            "confidence": 0.8,
-            "evidence": "Character description",
-        },
-        "emotional_traits": {
-            "value": "Cheerful",
+        "location": {"value": "Lumbridge", "source": "explicit", "confidence": 1.0, "evidence": "Located in Lumbridge"},
+        "personality_summary": {
+            "value": "Friendly and helpful",
             "source": "inferred",
             "confidence": 0.7,
             "evidence": "Friendly demeanor",
         },
-        "notable_quirks": {"value": None, "source": "default", "confidence": 1.0, "evidence": "No notable quirks"},
-        "physical_condition": {
-            "value": "Healthy",
-            "source": "inferred",
-            "confidence": 0.8,
-            "evidence": "Active worker",
-        },
-        "mental_state": {"value": "Stable", "source": "inferred", "confidence": 0.8, "evidence": "Normal behavior"},
-        "cultural_background": {
-            "value": "Human_Misthalin",
-            "source": "inferred",
-            "confidence": 0.7,
-            "evidence": "Lumbridge location",
-        },
-        "accent_region": {"value": "Generic", "source": "default", "confidence": 0.5, "evidence": "No specific accent"},
-        "combat_experience": {
-            "value": "civilian",
-            "source": "inferred",
-            "confidence": 0.8,
-            "evidence": "Non-combat NPC",
-        },
-        "magical_abilities": {
-            "value": "non_magical",
-            "source": "inferred",
-            "confidence": 0.9,
-            "evidence": "Regular human",
-        },
-        "speech_formality": {"value": "casual", "source": "inferred", "confidence": 0.7, "evidence": "Friendly manner"},
-        "vocabulary_level": {
-            "value": "average",
+        "dialogue_style": {
+            "value": "Casual and approachable",
             "source": "inferred",
             "confidence": 0.6,
-            "evidence": "Common occupation",
+            "evidence": "Speaking style",
         },
-        "speaking_pace": {"value": "normal", "source": "default", "confidence": 0.5, "evidence": "No indication"},
-        "voice_energy": {"value": "normal", "source": "default", "confidence": 0.5, "evidence": "No indication"},
-        "quest_importance": {"value": "none", "source": "explicit", "confidence": 1.0, "evidence": "Not quest-related"},
-        "relationships": [],
-        "dialogue_examples": [],
-        "common_phrases": [],
-        "description": f"{name} is a test NPC.",
-        "voice_direction": "Friendly voice with normal tone",
-        "confidence_overall": 0.75,
+        "appearance": {
+            "value": "Standard human appearance",
+            "source": "inferred",
+            "confidence": 0.5,
+            "evidence": "Visual description",
+        },
+        "age_estimate": {"value": "middle-aged", "source": "inferred", "confidence": 0.6, "evidence": "Age appearance"},
+        "quest_involvement": {"value": [], "source": "explicit", "confidence": 1.0, "evidence": "No quest involvement"},
+        "game_significance": {
+            "value": None,
+            "source": "default",
+            "confidence": 1.0,
+            "evidence": "No special significance",
+        },
     }
 
     if custom_fields:
@@ -149,26 +112,30 @@ class TestCrawl4AINPCExtractorExtraction:
         return _create_complete_npc_data(
             "Bob",
             {
-                "examine_text": {
-                    "value": "A skilled axeman.",
-                    "source": "explicit",
-                    "confidence": 1.0,
-                    "evidence": "Examine text",
-                },
                 "occupation": {
                     "value": "Lumberjack",
                     "source": "explicit",
                     "confidence": 0.9,
-                    "evidence": "Works with axes",
+                    "evidence": "Works with axes - a skilled axeman",
                 },
-                "personality": {
+                "personality_summary": {
                     "value": "Friendly and hardworking",
                     "source": "inferred",
                     "confidence": 0.8,
                     "evidence": "Character description",
                 },
-                "description": "Bob is a lumberjack who lives in Lumbridge.",
-                "voice_direction": "Friendly working-class voice with a slight cheerful tone",
+                "location": {
+                    "value": "Lumbridge",
+                    "source": "explicit",
+                    "confidence": 1.0,
+                    "evidence": "Lives in Lumbridge",
+                },
+                "dialogue_style": {
+                    "value": "Friendly working-class tone",
+                    "source": "inferred",
+                    "confidence": 0.7,
+                    "evidence": "Cheerful and approachable",
+                },
             },
         )
 
@@ -187,7 +154,7 @@ class TestCrawl4AINPCExtractorExtraction:
 
         with (
             patch.object(extractor, "_get_npc_page_url", return_value=url) as mock_url_lookup,
-            patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class,
+            patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class,
         ):
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = mock_crawler_result
@@ -197,9 +164,9 @@ class TestCrawl4AINPCExtractorExtraction:
 
             mock_url_lookup.assert_called_once_with(npc_id)
             assert isinstance(result, NPCWikiSourcedData)
-            assert result.name == "Bob"
-            assert result.gender.value == "male"
-            assert result.race.value == "Human"
+            assert result.name.value == "Bob"
+            assert result.occupation.value == "Lumberjack"
+            assert result.location.value == "Lumbridge"
 
     @pytest.mark.asyncio
     async def test_extract_npc_data_from_url_multiple_npcs(self, extractor):
@@ -209,15 +176,14 @@ class TestCrawl4AINPCExtractorExtraction:
             _create_complete_npc_data(
                 "Bob",
                 {
-                    "examine_text": {
-                        "value": "A skilled axeman.",
+                    "occupation": {
+                        "value": "Lumberjack",
                         "source": "explicit",
                         "confidence": 1.0,
-                        "evidence": "Examine text",
+                        "evidence": "A skilled axeman",
                     },
-                    "description": "Bob is a lumberjack.",
-                    "personality": {
-                        "value": "Friendly",
+                    "personality_summary": {
+                        "value": "Friendly lumberjack",
                         "source": "inferred",
                         "confidence": 0.8,
                         "evidence": "Character description",
@@ -227,16 +193,14 @@ class TestCrawl4AINPCExtractorExtraction:
             _create_complete_npc_data(
                 "Alice",
                 {
-                    "gender": {"value": "female", "source": "explicit", "confidence": 0.9, "evidence": "Female NPC"},
-                    "examine_text": {
-                        "value": "A local merchant.",
+                    "occupation": {
+                        "value": "Merchant",
                         "source": "explicit",
-                        "confidence": 1.0,
-                        "evidence": "Examine text",
+                        "confidence": 0.9,
+                        "evidence": "A local merchant",
                     },
-                    "description": "Alice sells goods.",
-                    "personality": {
-                        "value": "Business-minded",
+                    "personality_summary": {
+                        "value": "Business-minded merchant",
                         "source": "inferred",
                         "confidence": 0.8,
                         "evidence": "Character description",
@@ -249,7 +213,7 @@ class TestCrawl4AINPCExtractorExtraction:
         mock_result.success = True
         mock_result.extracted_content = json.dumps(npc_data_list)
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
@@ -258,8 +222,8 @@ class TestCrawl4AINPCExtractorExtraction:
             result = await extractor._extract_npc_data_from_url(url)
 
             assert len(result) == 2
-            assert result[0].name == "Bob"
-            assert result[1].name == "Alice"
+            assert result[0].name.value == "Bob"
+            assert result[1].name.value == "Alice"
 
 
 class TestCrawl4AINPCExtractorErrorHandling:
@@ -277,7 +241,7 @@ class TestCrawl4AINPCExtractorErrorHandling:
         mock_result.success = False
         mock_result.error_message = "Network timeout"
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
@@ -293,7 +257,7 @@ class TestCrawl4AINPCExtractorErrorHandling:
     async def test_extract_npc_data_no_result(self, extractor):
         url = "https://oldschool.runescape.wiki/w/Bob"
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = None
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
@@ -315,7 +279,7 @@ class TestCrawl4AINPCExtractorErrorHandling:
         mock_result.success = True
         mock_result.extracted_content = "invalid json content"
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
@@ -338,7 +302,7 @@ class TestCrawl4AINPCExtractorErrorHandling:
         mock_result.success = True
         mock_result.extracted_content = json.dumps(invalid_data)
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
             mock_crawler.arun.return_value = mock_result
             mock_crawler_class.return_value.__aenter__.return_value = mock_crawler
@@ -354,7 +318,7 @@ class TestCrawl4AINPCExtractorErrorHandling:
     async def test_extract_npc_data_unexpected_exception(self, extractor):
         url = "https://oldschool.runescape.wiki/w/Bob"
 
-        with patch("voiceover_mage.npc.extractors.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
+        with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler_class.side_effect = RuntimeError("Unexpected error")
 
             with pytest.raises(RetryError) as exc_info:

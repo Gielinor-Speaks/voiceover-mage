@@ -8,8 +8,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.pool import StaticPool
 
-from voiceover_mage.lib.database import DatabaseManager
-from voiceover_mage.npc.persistence import NPCRawExtraction
+from voiceover_mage.persistence.manager import DatabaseManager
+from voiceover_mage.persistence.models import NPCRawExtraction
 
 
 @pytest_asyncio.fixture

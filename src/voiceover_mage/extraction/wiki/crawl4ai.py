@@ -7,15 +7,17 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from tenacity import retry, stop_after_attempt
 
 from voiceover_mage.config import get_config
-from voiceover_mage.lib.logging import (
+from voiceover_mage.core.models import NPCWikiSourcedData
+
+# Import shared ExtractionError from base
+from voiceover_mage.extraction.base import ExtractionError
+from voiceover_mage.extraction.wiki.base import BaseWikiNPCExtractor
+from voiceover_mage.utils.logging import (
     get_logger,
     log_api_call,
     log_extraction_step,
     suppress_library_output,
 )
-from voiceover_mage.npc.extractors.base import ExtractionError
-from voiceover_mage.npc.extractors.wiki.base import BaseWikiNPCExtractor
-from voiceover_mage.npc.models import NPCWikiSourcedData
 
 
 class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
@@ -122,7 +124,10 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
                         npc_data = NPCWikiSourcedData(**item)
                         npc_objects.append(npc_data)
                         self.logger.debug(
-                            "Validated NPC data object", item_index=i, npc_name=npc_data.name, npc_race=npc_data.race
+                            "Validated NPC data object",
+                            item_index=i,
+                            npc_name=npc_data.name.value,
+                            occupation=npc_data.occupation.value if npc_data.occupation else None,
                         )
                     except Exception as e:
                         self.logger.error(
@@ -133,7 +138,7 @@ class Crawl4AINPCExtractor(BaseWikiNPCExtractor):
                 self.logger.info(
                     "Extraction completed successfully",
                     npc_count=len(npc_objects),
-                    npc_names=[npc.name for npc in npc_objects],
+                    npc_names=[npc.name.value for npc in npc_objects],
                 )
                 return npc_objects
 

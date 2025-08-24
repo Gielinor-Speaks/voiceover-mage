@@ -1,5 +1,5 @@
-# ABOUTME: Database manager for async SQLite operations using SQLAlchemy async components
-# ABOUTME: Handles persistence and caching of NPC extraction data
+# ABOUTME: Database manager for persistence layer - async operations and caching
+# ABOUTME: Coordinates database connections, transactions, and checkpoint management
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from voiceover_mage.npc.models import NPCExtraction, NPCRawExtractionData, ExtractionStage
+from voiceover_mage.core.models import ExtractionStage
+from voiceover_mage.persistence.models import NPCRawExtraction as NPCExtraction
 
 
 class DatabaseManager:
@@ -86,17 +87,20 @@ class DatabaseManager:
             # We are using the connection's execute method to perform the bulk delete
             # as a workaround for SQLModel's overload not working with non-SELECT statements
             # SEE: https://github.com/fastapi/sqlmodel/issues/909#issuecomment-2372031146
-            await (await session.connection()).execute(statement)
+            conn = await session.connection()
+            await conn.execute(statement)
             await session.commit()
 
     async def close(self) -> None:
         """Close the database connection."""
         await self.engine.dispose()
 
-    async def save_raw_data(self, npc_id: int, npc_name: str, raw_data: dict, npc_variant: str | None = None) -> NPCExtraction:
+    async def save_raw_data(
+        self, npc_id: int, npc_name: str, raw_data: dict, npc_variant: str | None = None
+    ) -> NPCExtraction:
         """Save raw extraction data, creating new record if needed."""
         existing = await self.get_cached_extraction(npc_id)
-        
+
         if existing:
             existing.raw_data = raw_data
             existing.add_stage(ExtractionStage.RAW)
@@ -105,10 +109,12 @@ class DatabaseManager:
                 npc_id=npc_id,
                 npc_name=npc_name,
                 npc_variant=npc_variant,
+                wiki_url=raw_data.get("wiki_url", ""),
+                raw_markdown=raw_data.get("raw_markdown", ""),
                 raw_data=raw_data,
-                completed_stages=[ExtractionStage.RAW]
+                completed_stages=[ExtractionStage.RAW],
             )
-        
+
         return await self.save_extraction(existing)
 
     async def update_stage_data(self, npc_id: int, stage: ExtractionStage, data: dict) -> NPCExtraction | None:
@@ -116,14 +122,14 @@ class DatabaseManager:
         extraction = await self.get_cached_extraction(npc_id)
         if not extraction:
             return None
-            
+
         if stage == ExtractionStage.TEXT:
             extraction.text_analysis = data
         elif stage == ExtractionStage.VISUAL:
-            extraction.visual_analysis = data  
+            extraction.visual_analysis = data
         elif stage == ExtractionStage.PROFILE:
             extraction.character_profile = data
-            
+
         extraction.add_stage(stage)
         return await self.save_extraction(extraction)
 
@@ -133,7 +139,7 @@ class DatabaseManager:
             statement = select(NPCExtraction)
             result = await session.exec(statement)
             extractions = result.all()
-            
+
             return [ext for ext in extractions if not ext.has_stage(missing_stage)]
 
     @asynccontextmanager

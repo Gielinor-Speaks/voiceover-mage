@@ -1,5 +1,5 @@
-# ABOUTME: Pydantic TypeAdapter solution for JSON columns in SQLModel
-# ABOUTME: Enables seamless dict/list storage with proper type validation
+# ABOUTME: TypeAdapter utilities for JSON serialization in persistence layer
+# ABOUTME: Enables seamless Pydantic model ↔ SQLModel JSON column integration
 
 from pydantic import TypeAdapter
 from sqlalchemy import TypeDecorator

@@ -1,5 +1,5 @@
-# ABOUTME: Logging configuration for dual-mode operation (interactive CLI vs production JSON)
-# ABOUTME: Sets up structlog with context-aware processors and output routing
+# ABOUTME: Logging configuration management for utils layer
+# ABOUTME: Dual-mode operation: interactive CLI (Rich) vs production (JSON)
 
 import contextlib
 import io

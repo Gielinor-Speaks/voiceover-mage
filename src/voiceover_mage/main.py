@@ -10,7 +10,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from voiceover_mage.config import get_config
-from voiceover_mage.lib.logging import (
+from voiceover_mage.core.unified_pipeline import UnifiedPipelineService
+from voiceover_mage.utils.logging import (
     LoggingMode,
     configure_logging,
     create_smart_progress,
@@ -18,7 +19,6 @@ from voiceover_mage.lib.logging import (
     with_npc_context,
     with_pipeline_context,
 )
-# from voiceover_mage.npc.models import NPCWikiSourcedData  # Not used in current implementation
 
 
 # Shared options that can be used in any command
@@ -47,27 +47,31 @@ def extract_npc(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed extraction process"),
     raw: bool = typer.Option(False, "--raw", help="Display raw markdown content instead of analyzed data"),
     force_refresh: bool = typer.Option(False, "--force-refresh", help="Bypass cache and extract fresh data"),
-    dspy_images: bool = typer.Option(False, "--dspy-images", help="Use DSPy intelligent image extraction instead of regex"),
 ):
     """
     🕷️ Extract NPC data from the Old School RuneScape wiki.
 
     Phase 1: Extracts raw markdown and image URLs from wiki pages with caching.
     Use --raw to see the extracted markdown content.
-    Use --dspy-images to enable intelligent image extraction (requires LM configuration).
     """
-    asyncio.run(_extract_npc_async(npc_id, verbose, raw, force_refresh, dspy_images, ctx.obj["json_output"]))
+    asyncio.run(_extract_npc_async(npc_id, verbose, raw, force_refresh, ctx.obj["json_output"]))
 
 
-async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refresh: bool, dspy_images: bool, json_output: bool):
+async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refresh: bool, json_output: bool):
     """Async helper for NPC extraction using the service layer."""
     with with_npc_context(npc_id) as npc_logger:
-        npc_logger.info("Starting NPC extraction", npc_id=npc_id, verbose=verbose, raw=raw, force_refresh=force_refresh, dspy_images=dspy_images)
+        npc_logger.info(
+            "Starting NPC extraction",
+            npc_id=npc_id,
+            verbose=verbose,
+            raw=raw,
+            force_refresh=force_refresh,
+        )
 
         try:
-            from voiceover_mage.npc.service import NPCExtractionService
+            from voiceover_mage.core.service import NPCExtractionService
 
-            service = NPCExtractionService(force_refresh=force_refresh, use_dspy_images=dspy_images)
+            service = NPCExtractionService(force_refresh=force_refresh)
 
             if not json_output:
                 # Interactive mode: smart progress that updates from logs
@@ -97,34 +101,36 @@ async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refres
                 # Interactive mode: beautiful display with Rich
                 status_style = "green" if extraction.extraction_success else "red"
                 cache_indicator = "💾" if not force_refresh else "🆕"
-                
+
                 console.print(f"\n🎭 [bold magenta]NPC Extraction: {extraction.npc_name}[/bold magenta]")
-                
+
                 # Status table
                 status_table = Table(title=f"{cache_indicator} Extraction Status")
                 status_table.add_column("Field", style="cyan")
                 status_table.add_column("Value", style="white")
-                
+
                 status_table.add_row("NPC ID", str(extraction.npc_id))
                 status_table.add_row("Name", extraction.npc_name)
                 status_table.add_row("Wiki URL", extraction.wiki_url)
                 status_table.add_row("Success", f"[{status_style}]{extraction.extraction_success}[/{status_style}]")
                 status_table.add_row("Extracted At", extraction.created_at.strftime("%Y-%m-%d %H:%M:%S"))
                 status_table.add_row("Markdown Length", f"{len(extraction.raw_markdown):,} chars")
-                
+
                 # Simple image status
-                status_table.add_row("Has Chathead", "✅" if (extraction.raw_data and extraction.raw_data.get("chathead_image_url")) else "❌")
-                status_table.add_row("Has Main Image", "✅" if (extraction.raw_data and extraction.raw_data.get("image_url")) else "❌")
-                
+                status_table.add_row("Has Chathead", "✅" if extraction.chathead_image_url else "❌")
+                status_table.add_row("Has Main Image", "✅" if extraction.image_url else "❌")
+
                 console.print(status_table)
 
-                if raw and extraction.raw_data and extraction.raw_data.get("raw_markdown"):
-                    markdown_content = extraction.raw_data["raw_markdown"]
-                    console.print(Panel(
-                        markdown_content[:2000] + ("..." if len(markdown_content) > 2000 else ""),
-                        title="📜 Raw Markdown Content",
-                        border_style="blue"
-                    ))
+                if raw and extraction.raw_markdown:
+                    markdown_content = extraction.raw_markdown
+                    console.print(
+                        Panel(
+                            markdown_content[:2000] + ("..." if len(markdown_content) > 2000 else ""),
+                            title="📜 Raw Markdown Content",
+                            border_style="blue",
+                        )
+                    )
 
                 if verbose:
                     # Show simple image URLs
@@ -170,55 +176,62 @@ async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
                 )
             )
 
-        from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
-
         try:
             if not json_output:
                 # Interactive mode: smart progress that updates from logs
                 progress, task_id, tracker = create_smart_progress(
-                    console, f"🧙‍♂️ Invoking voice transformation magic for NPC ID {npc_id}..."
+                    console, f"🧙‍♂️ Running unified extraction pipeline for NPC ID {npc_id}..."
                 )
 
                 with progress, tracker:
-                    # Step 1: Extract NPC data
+                    # Run unified pipeline
                     config = get_config()
-                    extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
-                    npc_data = await extractor.extract_npc_data(npc_id)
+                    pipeline_service = UnifiedPipelineService(api_key=config.gemini_api_key)
+                    extraction = await pipeline_service.run_full_pipeline(npc_id)
 
-                    if not npc_data:
-                        pipeline_logger.warning("No NPC data found in pipeline", npc_id=npc_id)
-                        console.print("[red]❌ No NPC data found[/red]")
+                    if not extraction.extraction_success:
+                        pipeline_logger.warning(
+                            "Pipeline extraction failed", npc_id=npc_id, error=extraction.error_message
+                        )
+                        console.print(f"[red]❌ Pipeline extraction failed: {extraction.error_message}[/red]")
                         return
-                    pipeline_logger.info("Extracted NPC data in pipeline", npc_name=npc_data.name)
 
-                    # Update progress for character analysis step
-                    progress.update(task_id, description="🧙‍♂️ Analyzing character traits...")
-                    pipeline_logger.info("Character analysis step", step="analysis")
+                    pipeline_logger.info(
+                        "Pipeline completed successfully",
+                        npc_name=extraction.npc_name,
+                        completed_stages=extraction.completed_stages,
+                    )
 
                 # Show completion message outside progress context
-                console.print(f"✅ Extracted data for: [bold green]{npc_data.name}[/bold green]")
+                console.print(f"✅ Pipeline complete for: [bold green]{extraction.npc_name}[/bold green]")
+                console.print(f"📊 Completed stages: [bold blue]{', '.join(extraction.completed_stages)}[/bold blue]")
 
-            # console.print(f"✅ Character analysis complete: "
-            #               f"[bold blue]{character_profile.archetype}[/bold blue]")
+                # Display character profile if available
+                if extraction.character_profile:
+                    _display_character_profile_summary(extraction.character_profile)
+
             else:
                 # Production mode: no progress display
                 config = get_config()
-                extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
-                npc_data = await extractor.extract_npc_data(npc_id)
+                pipeline_service = UnifiedPipelineService(api_key=config.gemini_api_key)
+                extraction = await pipeline_service.run_full_pipeline(npc_id)
 
-                if not npc_data:
-                    pipeline_logger.warning("No NPC data found in pipeline", npc_id=npc_id)
+                if not extraction.extraction_success:
+                    pipeline_logger.warning("Pipeline extraction failed", npc_id=npc_id, error=extraction.error_message)
                     return
-                pipeline_logger.info("Extracted NPC data in pipeline", npc_name=npc_data.name)
-                pipeline_logger.info("Character analysis step", step="analysis")
 
-            # Display results
-            # _display_character_profile(character_profile)
+                pipeline_logger.info(
+                    "Pipeline completed successfully",
+                    npc_name=extraction.npc_name,
+                    completed_stages=extraction.completed_stages,
+                )
 
             if save_output:
-                pipeline_logger.info("Saving pipeline results", output_location="character_profiles/")
+                pipeline_logger.info("Pipeline results saved to database", npc_id=npc_id)
                 if not json_output:
-                    console.print("[green]💾 Results saved to character_profiles/[/green]")
+                    console.print("[green]💾 Pipeline results saved to database[/green]")
+
+            await pipeline_service.close()
 
         except Exception as e:
             pipeline_logger.error("Pipeline execution failed", error=str(e), error_type=type(e).__name__, npc_id=npc_id)
@@ -256,6 +269,58 @@ def _display_character_profile(profile):
     voice_table.add_row("Volume", vc.volume.title())
 
     console.print(voice_table)
+
+
+def _display_character_profile_summary(profile: dict):
+    """Display character profile summary in a beautiful format."""
+    # Character overview
+    overview_table = Table(title=f"👤 Character Profile Summary: {profile.get('npc_name', 'Unknown')}")
+    overview_table.add_column("Aspect", style="cyan")
+    overview_table.add_column("Details", style="white")
+
+    # Get personality traits and truncate if too long
+    personality = profile.get("personality_traits", "")
+    personality_short = personality[:150] + "..." if len(personality) > 150 else personality
+    overview_table.add_row("Personality", personality_short or "Not analyzed")
+
+    # Get occupation
+    occupation = profile.get("occupation", "")
+    overview_table.add_row("Occupation", occupation or "Not specified")
+
+    # Get dialogue patterns and truncate
+    dialogue = profile.get("dialogue_patterns", "")
+    dialogue_short = dialogue[:120] + "..." if len(dialogue) > 120 else dialogue
+    overview_table.add_row("Speech Style", dialogue_short or "Not analyzed")
+
+    # Get visual appearance
+    age_cat = profile.get("age_category", "")
+    build = profile.get("build_type", "")
+    attire = profile.get("attire_style", "")
+    appearance_parts = [p for p in [age_cat, build, attire] if p]
+    appearance_str = ", ".join(appearance_parts) if appearance_parts else "Not analyzed"
+    overview_table.add_row("Appearance", appearance_str)
+
+    # Add visual archetype
+    archetype = profile.get("visual_archetype", "")
+    overview_table.add_row("Archetype", archetype or "Not specified")
+
+    console.print(overview_table)
+
+    # Voice and confidence info
+    confidence_table = Table(title="🎵 Analysis Confidence")
+    confidence_table.add_column("Metric", style="yellow")
+    confidence_table.add_column("Value", style="white")
+
+    overall_conf = profile.get("overall_confidence", 0)
+    confidence_table.add_row("Overall Confidence", f"{overall_conf:.1%}" if overall_conf else "Unknown")
+
+    text_conf = profile.get("text_confidence", 0)
+    confidence_table.add_row("Text Analysis", f"{text_conf:.1%}" if text_conf else "Unknown")
+
+    visual_conf = profile.get("visual_confidence", 0)
+    confidence_table.add_row("Visual Analysis", f"{visual_conf:.1%}" if visual_conf else "Unknown")
+
+    console.print(confidence_table)
 
 
 def _initialize_logging(json_output: bool, log_level: str | None = None, log_file: str | None = None) -> None:

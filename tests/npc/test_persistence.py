@@ -3,7 +3,7 @@
 
 from datetime import UTC, datetime
 
-from voiceover_mage.npc.persistence import NPCRawExtraction
+from voiceover_mage.persistence.models import NPCRawExtraction
 
 
 class TestNPCRawExtractionValidation:

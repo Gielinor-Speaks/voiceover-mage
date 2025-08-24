@@ -1,16 +1,18 @@
-# ABOUTME: Service layer for coordinating NPC extraction with caching and database persistence
-# ABOUTME: Implements cache-first extraction logic with progress reporting
+# ABOUTME: High-level service API for core business logic and orchestration
+# ABOUTME: Coordinates extraction → persistence → business object workflow
 
-from voiceover_mage.lib.database import DatabaseManager
-from voiceover_mage.lib.logging import get_logger
-from voiceover_mage.npc.extractors.base import RawNPCExtractor
-from voiceover_mage.npc.extractors.markdown import MarkdownNPCExtractor
-from voiceover_mage.npc.models import NPCExtraction, NPCRawExtractionData, ExtractionStage
+from voiceover_mage.extraction.base import RawNPCExtractor
+from voiceover_mage.extraction.wiki.markdown import MarkdownNPCExtractor
+from voiceover_mage.persistence import DatabaseManager, NPCRawExtraction
+from voiceover_mage.utils.logging import get_logger
+
+# Using NPCRawExtraction as NPCExtraction alias during transition
+NPCExtraction = NPCRawExtraction
 
 
 class NPCExtractionService:
     """Service for extracting NPC data with caching and database persistence.
-    
+
     Implements cache-first logic: check database before extracting fresh data.
     """
 
@@ -19,7 +21,6 @@ class NPCExtractionService:
         extractor: RawNPCExtractor | None = None,
         database: DatabaseManager | None = None,
         force_refresh: bool = False,
-        use_dspy_images: bool = False,
     ):
         """Initialize the extraction service.
 
@@ -27,9 +28,8 @@ class NPCExtractionService:
             extractor: The raw NPC extractor to use (defaults to MarkdownNPCExtractor)
             database: Database manager (defaults to new DatabaseManager)
             force_refresh: If True, bypass cache and extract fresh data
-            use_dspy_images: Use DSPy intelligent image extraction instead of regex
         """
-        self.extractor = extractor or MarkdownNPCExtractor(use_dspy_images=use_dspy_images)
+        self.extractor = extractor or MarkdownNPCExtractor()
         self.database = database or DatabaseManager()
         self.force_refresh = force_refresh
         self.logger = get_logger(__name__)
@@ -59,15 +59,15 @@ class NPCExtractionService:
                     npc_id=npc_id,
                     npc_name=cached_extraction.npc_name,
                     cached_at=cached_extraction.created_at,
-                    extraction_success=cached_extraction.extraction_success
+                    extraction_success=cached_extraction.extraction_success,
                 )
                 return cached_extraction
 
         # Extract fresh data
         self.logger.info("Extracting fresh NPC data", npc_id=npc_id, force_refresh=self.force_refresh)
-        
+
         extraction = await self.extractor.extract(npc_id)
-        
+
         # Save to database (cache for future use)
         if self.force_refresh:
             # For force refresh, we want to update the cache, so save directly
@@ -75,15 +75,15 @@ class NPCExtractionService:
         else:
             # Normal save with cache check
             saved_extraction = await self.database.save_extraction(extraction)
-        
+
         self.logger.info(
             "Extraction completed and cached",
             npc_id=npc_id,
             npc_name=saved_extraction.npc_name,
             extraction_success=saved_extraction.extraction_success,
-            markdown_length=len(saved_extraction.raw_markdown)
+            markdown_length=len(saved_extraction.raw_markdown),
         )
-        
+
         return saved_extraction
 
     async def extract_multiple_npcs(self, npc_ids: list[int], progress_callback=None) -> list[NPCRawExtraction]:
@@ -98,24 +98,20 @@ class NPCExtractionService:
         """
         results = []
         total = len(npc_ids)
-        
+
         self.logger.info("Starting batch extraction", npc_count=total, force_refresh=self.force_refresh)
 
         for i, npc_id in enumerate(npc_ids, 1):
             try:
                 if progress_callback:
                     progress_callback(npc_id, i, total)
-                
+
                 extraction = await self.extract_npc(npc_id)
                 results.append(extraction)
-                
+
             except Exception as e:
                 self.logger.error(
-                    "Failed to extract NPC in batch",
-                    npc_id=npc_id,
-                    error=str(e),
-                    current_index=i,
-                    total=total
+                    "Failed to extract NPC in batch", npc_id=npc_id, error=str(e), current_index=i, total=total
                 )
                 # Add failed extraction record
                 failed_extraction = NPCRawExtraction(
@@ -126,17 +122,12 @@ class NPCExtractionService:
                     chathead_image_url=None,
                     image_url=None,
                     extraction_success=False,
-                    error_message=str(e)
+                    error_message=str(e),
                 )
                 results.append(failed_extraction)
 
         successful = sum(1 for r in results if r.extraction_success)
-        self.logger.info(
-            "Batch extraction completed",
-            total=total,
-            successful=successful,
-            failed=total - successful
-        )
+        self.logger.info("Batch extraction completed", total=total, successful=successful, failed=total - successful)
 
         return results
 
@@ -150,15 +141,9 @@ class NPCExtractionService:
             Status dictionary with extraction information
         """
         cached = await self.database.get_cached_extraction(npc_id)
-        
+
         if not cached:
-            return {
-                "npc_id": npc_id,
-                "cached": False,
-                "extraction_success": None,
-                "created_at": None,
-                "npc_name": None
-            }
+            return {"npc_id": npc_id, "cached": False, "extraction_success": None, "created_at": None, "npc_name": None}
 
         return {
             "npc_id": npc_id,
@@ -169,7 +154,7 @@ class NPCExtractionService:
             "error_message": cached.error_message,
             "has_chathead": cached.chathead_image_url is not None,
             "has_image": cached.image_url is not None,
-            "markdown_length": len(cached.raw_markdown) if cached.raw_markdown else 0
+            "markdown_length": len(cached.raw_markdown) if cached.raw_markdown else 0,
         }
 
     async def clear_cache(self) -> None:

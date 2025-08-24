@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from rich.console import Console
 from rich.progress import Progress
 
-from voiceover_mage.lib.logging.progress import (
+from voiceover_mage.utils.logging.progress import (
     ProgressLogInterceptor,
     SmartProgressTracker,
     create_smart_progress,

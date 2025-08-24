@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from voiceover_mage.lib.logging.config import (
+from voiceover_mage.utils.logging.config import (
     LoggingMode,
     configure_logging,
     detect_logging_mode,
@@ -182,7 +182,7 @@ class TestGetLoggingStatus:
 
     def test_get_status_interactive_mode(self):
         """Test status reporting for interactive mode."""
-        with patch("voiceover_mage.lib.logging.config.detect_logging_mode") as mock_detect:
+        with patch("voiceover_mage.utils.logging.config.detect_logging_mode") as mock_detect:
             mock_detect.return_value = LoggingMode.INTERACTIVE
 
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -203,7 +203,7 @@ class TestGetLoggingStatus:
 
     def test_get_status_production_mode(self):
         """Test status reporting for production mode."""
-        with patch("voiceover_mage.lib.logging.config.detect_logging_mode") as mock_detect:
+        with patch("voiceover_mage.utils.logging.config.detect_logging_mode") as mock_detect:
             mock_detect.return_value = LoggingMode.PRODUCTION
 
             status = get_logging_status()

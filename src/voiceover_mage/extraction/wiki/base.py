@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from voiceover_mage.lib.logging import get_logger
-from voiceover_mage.npc.models import NPCWikiSourcedData
+from voiceover_mage.core import NPCWikiSourcedData
+from voiceover_mage.utils.logging import get_logger
 
 
 class BaseWikiNPCExtractor(ABC):

@@ -3,7 +3,7 @@
 
 from typing import Protocol
 
-from ..persistence import NPCRawExtraction
+from voiceover_mage.persistence import NPCRawExtraction
 
 
 class RawNPCExtractor(Protocol):

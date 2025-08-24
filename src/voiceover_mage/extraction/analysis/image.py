@@ -1,12 +1,14 @@
 # ABOUTME: Two-step DSPy module for NPC image identification and visual characteristic extraction
 # ABOUTME: Step 1: Identify correct images from markdown, Step 2: Analyze image pixels for visual traits
 
+from typing import cast
+
 import dspy
 import httpx
 from pydantic import BaseModel, Field
 
 from voiceover_mage.config import get_config
-from voiceover_mage.lib.logging import get_logger
+from voiceover_mage.utils.logging import get_logger
 
 
 class NPCVisualCharacteristics(BaseModel):
@@ -25,14 +27,15 @@ class NPCVisualCharacteristics(BaseModel):
     )
     attire_style: str = Field(
         default="",
-        description="Descriptive clothing and equipment style (e.g., 'flowing wizard robes with intricate golden embroidery')",
+        description="Descriptive clothing and equipment style (e.g., 'flowing wizard robes with golden embroidery')",
     )
     distinctive_features: str = Field(
-        default="", description="Descriptive notable visual features (e.g., 'long braided beard with silver rings, battle scars across left cheek')"
+        default="",
+        description="Descriptive notable visual features (e.g., 'long braided beard, battle scars across cheek')",
     )
     color_palette: str = Field(
         default="",
-        description="Descriptive color palette (e.g., 'deep sapphire blue robes with golden trim and bronze accessories')",
+        description="Descriptive color palette (e.g., 'deep sapphire blue robes with golden trim')",
     )
     visual_archetype: str = Field(
         default="", description="Visual archetype (e.g., 'wizard', 'warrior', 'merchant', 'peasant', 'noble')"
@@ -82,9 +85,15 @@ class VisualAnalysisSignature(dspy.Signature):
     build_type: str = dspy.OutputField(
         description="Physical build from visual analysis (slender, stocky, muscular, frail, imposing)"
     )
-    attire_style: str = dspy.OutputField(description="Descriptive clothing and equipment style observed in images (e.g., 'flowing wizard robes with golden trim and mystical symbols')")
-    distinctive_features: str = dspy.OutputField(description="Descriptive notable visual features seen in images (e.g., 'weathered face with deep-set eyes and a prominent scar across the forehead')")
-    color_palette: str = dspy.OutputField(description="Descriptive color palette observed in the images (e.g., 'predominantly deep blues and purples with silver accents and warm golden highlights')")
+    attire_style: str = dspy.OutputField(
+        description="Descriptive clothing and equipment style observed in images (e.g., 'flowing wizard robes')"
+    )
+    distinctive_features: str = dspy.OutputField(
+        description="Descriptive notable visual features seen in images (e.g., 'weathered face with scar')"
+    )
+    color_palette: str = dspy.OutputField(
+        description="Descriptive color palette observed in the images (e.g., 'deep blues and purples')",
+    )
     visual_archetype: str = dspy.OutputField(
         description="Overall visual archetype based on appearance (wizard, warrior, merchant, etc.)"
     )
@@ -140,6 +149,8 @@ class ImageDetailExtractor(dspy.Module):
         image_id_result = self.identify_images(
             markdown_content=markdown_content, npc_name=npc_name, npc_variant=variant_str
         )
+        # Type annotation for DSPy result (has chathead_url, image_url attributes)
+        image_id_result = cast("ImageIdentificationSignature", image_id_result)
 
         # Parse image URLs and handle "None" strings
         chathead_url = None if image_id_result.chathead_url.lower() == "none" else image_id_result.chathead_url
@@ -159,6 +170,8 @@ class ImageDetailExtractor(dspy.Module):
             visual_result = self.analyze_visuals(
                 npc_name=npc_name, npc_variant=variant_str, chathead_image=chathead_image, main_image=main_image
             )
+            # Type annotation for DSPy result (has age_category, build_type, etc. attributes)
+            visual_result = cast("VisualAnalysisSignature", visual_result)
 
         except Exception as e:
             # Fallback if image loading fails
@@ -177,7 +190,9 @@ class ImageDetailExtractor(dspy.Module):
                     "confidence": 0.0,
                     "reasoning": f"Image loading failed: {e}",
                 },
-            )
+            )()  # Instantiate the class
+            # Type annotation for fallback result
+            visual_result = cast("VisualAnalysisSignature", visual_result)
 
         # Visual characteristics are now descriptive strings (no parsing needed)
 
