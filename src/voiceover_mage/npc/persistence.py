@@ -2,8 +2,12 @@
 # ABOUTME: Provides database schema for caching wiki page content and images
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlmodel import Field, SQLModel
+
+if TYPE_CHECKING:
+    from voiceover_mage.npc.models.images import ImageExtractionSet
 
 
 class NPCRawExtraction(SQLModel, table=True):
@@ -25,8 +29,10 @@ class NPCRawExtraction(SQLModel, table=True):
 
     # Extracted content
     raw_markdown: str = Field(description="Full markdown content of the wiki page")
+    
+    # Simple image URLs (for Phase 1)
     chathead_image_url: str | None = Field(default=None, description="URL to the NPC's chathead image")
-    image_url: str | None = Field(default=None, description="URL to the NPC's full body image")
+    image_url: str | None = Field(default=None, description="URL to the NPC's main/body image")
 
     # Metadata
     created_at: datetime = Field(
@@ -34,3 +40,7 @@ class NPCRawExtraction(SQLModel, table=True):
     )
     extraction_success: bool = Field(default=True, description="Whether the extraction succeeded")
     error_message: str | None = Field(default=None, description="Error message if extraction failed")
+
+    def has_images(self) -> bool:
+        """Check if any image URLs are available."""
+        return bool(self.chathead_image_url or self.image_url)

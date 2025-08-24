@@ -18,7 +18,7 @@ from voiceover_mage.lib.logging import (
     with_npc_context,
     with_pipeline_context,
 )
-from voiceover_mage.npc.models import NPCWikiSourcedData
+# from voiceover_mage.npc.models import NPCWikiSourcedData  # Not used in current implementation
 
 
 # Shared options that can be used in any command
@@ -45,64 +45,95 @@ def extract_npc(
     ctx: typer.Context,
     npc_id: int = typer.Argument(help="NPC ID to extract from the wiki"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed extraction process"),
+    raw: bool = typer.Option(False, "--raw", help="Display raw markdown content instead of analyzed data"),
+    force_refresh: bool = typer.Option(False, "--force-refresh", help="Bypass cache and extract fresh data"),
+    dspy_images: bool = typer.Option(False, "--dspy-images", help="Use DSPy intelligent image extraction instead of regex"),
 ):
     """
     🕷️ Extract NPC data from the Old School RuneScape wiki.
 
-    Crawls the wiki page for the specified NPC ID and extracts structured data
-    including personality, appearance, and lore information.
+    Phase 1: Extracts raw markdown and image URLs from wiki pages with caching.
+    Use --raw to see the extracted markdown content.
+    Use --dspy-images to enable intelligent image extraction (requires LM configuration).
     """
-    asyncio.run(_extract_npc_async(npc_id, verbose, ctx.obj["json_output"]))
+    asyncio.run(_extract_npc_async(npc_id, verbose, raw, force_refresh, dspy_images, ctx.obj["json_output"]))
 
 
-async def _extract_npc_async(npc_id: int, verbose: bool, json_output: bool):
-    """Async helper for NPC extraction."""
+async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refresh: bool, dspy_images: bool, json_output: bool):
+    """Async helper for NPC extraction using the service layer."""
     with with_npc_context(npc_id) as npc_logger:
-        npc_logger.info("Starting NPC extraction", npc_id=npc_id, verbose=verbose)
+        npc_logger.info("Starting NPC extraction", npc_id=npc_id, verbose=verbose, raw=raw, force_refresh=force_refresh, dspy_images=dspy_images)
 
         try:
-            from voiceover_mage.npc.extractors.wiki.crawl4ai import Crawl4AINPCExtractor
+            from voiceover_mage.npc.service import NPCExtractionService
 
-            config = get_config()
-            extractor = Crawl4AINPCExtractor(api_key=config.gemini_api_key)
+            service = NPCExtractionService(force_refresh=force_refresh, use_dspy_images=dspy_images)
 
             if not json_output:
                 # Interactive mode: smart progress that updates from logs
+                cache_status = "fresh data" if force_refresh else "cached or fresh data"
                 progress, task_id, tracker = create_smart_progress(
-                    console, f"🧙‍♂️ Invoking extraction magic for NPC ID {npc_id}..."
+                    console, f"🧙‍♂️ Extracting {cache_status} for NPC ID {npc_id}..."
                 )
 
                 with progress, tracker:
-                    npc_data = await extractor.extract_npc_data(npc_id)
-                    npc_logger.debug("Extracted NPC data", npc_name=npc_data.name)
-
-                    npc_data_list = [npc_data]
+                    extraction = await service.extract_npc(npc_id)
+                    npc_logger.debug("Extracted NPC data", npc_name=extraction.npc_name)
             else:
                 # Production mode: no progress display
-                npc_data = await extractor.extract_npc_data(npc_id)
-                npc_logger.debug("Extracted NPC data", npc_name=npc_data.name)
-                npc_data_list: list[NPCWikiSourcedData] = [npc_data]
+                extraction = await service.extract_npc(npc_id)
+                npc_logger.debug("Extracted NPC data", npc_name=extraction.npc_name)
 
-            if not npc_data_list:
-                npc_logger.warning("No NPC data found", npc_id=npc_id)
+            if not extraction.extraction_success:
+                error_msg = extraction.error_message
+                npc_logger.warning("Extraction failed", npc_id=npc_id, error=error_msg)
                 if not json_output:
-                    console.print(f"[red]❌ No NPC data found for ID {npc_id}[/red]")
+                    console.print(f"[red]❌ Extraction failed for NPC ID {npc_id}: {error_msg}[/red]")
                 return
 
-            npc_logger.info("Successfully extracted NPC data", count=len(npc_data_list))
+            npc_logger.info("Successfully extracted NPC data", npc_name=extraction.npc_name)
 
-            for npc_data in npc_data_list:
-                npc_logger.info(
-                    "Processed NPC data", npc_name=npc_data.name, race=npc_data.race, location=npc_data.location
-                )
+            if not json_output:
+                # Interactive mode: beautiful display with Rich
+                status_style = "green" if extraction.extraction_success else "red"
+                cache_indicator = "💾" if not force_refresh else "🆕"
+                
+                console.print(f"\n🎭 [bold magenta]NPC Extraction: {extraction.npc_name}[/bold magenta]")
+                
+                # Status table
+                status_table = Table(title=f"{cache_indicator} Extraction Status")
+                status_table.add_column("Field", style="cyan")
+                status_table.add_column("Value", style="white")
+                
+                status_table.add_row("NPC ID", str(extraction.npc_id))
+                status_table.add_row("Name", extraction.npc_name)
+                status_table.add_row("Wiki URL", extraction.wiki_url)
+                status_table.add_row("Success", f"[{status_style}]{extraction.extraction_success}[/{status_style}]")
+                status_table.add_row("Extracted At", extraction.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+                status_table.add_row("Markdown Length", f"{len(extraction.raw_markdown):,} chars")
+                
+                # Simple image status
+                status_table.add_row("Has Chathead", "✅" if (extraction.raw_data and extraction.raw_data.get("chathead_image_url")) else "❌")
+                status_table.add_row("Has Main Image", "✅" if (extraction.raw_data and extraction.raw_data.get("image_url")) else "❌")
+                
+                console.print(status_table)
 
-                if not json_output:
-                    # Interactive mode: beautiful Pydantic model display with Rich
-                    console.print(f"\n🎭 [bold magenta]NPC Profile: {npc_data.name}[/bold magenta]")
-                    console.print(npc_data)
+                if raw and extraction.raw_data and extraction.raw_data.get("raw_markdown"):
+                    markdown_content = extraction.raw_data["raw_markdown"]
+                    console.print(Panel(
+                        markdown_content[:2000] + ("..." if len(markdown_content) > 2000 else ""),
+                        title="📜 Raw Markdown Content",
+                        border_style="blue"
+                    ))
 
-                    if verbose:
-                        console.print(Panel(npc_data.description, title="📜 Full Description", border_style="blue"))
+                if verbose:
+                    # Show simple image URLs
+                    if extraction.raw_data and extraction.raw_data.get("chathead_image_url"):
+                        console.print(f"🖼️ Chathead: {extraction.raw_data['chathead_image_url']}")
+                    if extraction.raw_data and extraction.raw_data.get("image_url"):
+                        console.print(f"🖼️ Main Image: {extraction.raw_data['image_url']}")
+
+            await service.close()
 
         except Exception as e:
             npc_logger.error("NPC extraction failed", error=str(e), error_type=type(e).__name__, npc_id=npc_id)
@@ -205,9 +236,9 @@ def _display_character_profile(profile):
 
     overview_table.add_row("Archetype", profile.archetype)
     overview_table.add_row("Social Role", profile.social_role)
-    overview_table.add_row("Personality Traits", ", ".join(profile.personality_traits))
-    overview_table.add_row("Speech Patterns", ", ".join(profile.speech_patterns))
-    overview_table.add_row("Emotional Range", ", ".join(profile.emotional_range))
+    overview_table.add_row("Personality Traits", profile.personality_traits)
+    overview_table.add_row("Speech Patterns", profile.dialogue_patterns)
+    overview_table.add_row("Emotional Range", profile.emotional_range)
 
     console.print(overview_table)
 

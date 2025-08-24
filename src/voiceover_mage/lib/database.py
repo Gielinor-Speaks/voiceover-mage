@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from voiceover_mage.npc.persistence import NPCRawExtraction
+from voiceover_mage.npc.models import NPCExtraction, NPCRawExtractionData, ExtractionStage
 
 
 class DatabaseManager:
@@ -38,7 +38,7 @@ class DatabaseManager:
         async with self.engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
 
-    async def get_cached_extraction(self, npc_id: int) -> NPCRawExtraction | None:
+    async def get_cached_extraction(self, npc_id: int) -> NPCExtraction | None:
         """Get a cached extraction by NPC ID.
 
         Args:
@@ -48,11 +48,11 @@ class DatabaseManager:
             The cached extraction or None if not found
         """
         async with self.async_session() as session:
-            statement = select(NPCRawExtraction).where(NPCRawExtraction.npc_id == npc_id)
+            statement = select(NPCExtraction).where(NPCExtraction.npc_id == npc_id)
             result = await session.exec(statement)
             return result.first()
 
-    async def save_extraction(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
+    async def save_extraction(self, extraction: NPCExtraction) -> NPCExtraction:
         """Save an extraction to the database.
 
         For caching purposes, if an extraction with the same npc_id already exists,
@@ -81,7 +81,7 @@ class DatabaseManager:
             # Use SQLAlchemy's delete statement for bulk delete
             from sqlalchemy import delete
 
-            statement = delete(NPCRawExtraction)
+            statement = delete(NPCExtraction)
             # Note: Use execute() for DELETE statements (exec() is only for SELECT)
             # We are using the connection's execute method to perform the bulk delete
             # as a workaround for SQLModel's overload not working with non-SELECT statements
@@ -92,6 +92,49 @@ class DatabaseManager:
     async def close(self) -> None:
         """Close the database connection."""
         await self.engine.dispose()
+
+    async def save_raw_data(self, npc_id: int, npc_name: str, raw_data: dict, npc_variant: str | None = None) -> NPCExtraction:
+        """Save raw extraction data, creating new record if needed."""
+        existing = await self.get_cached_extraction(npc_id)
+        
+        if existing:
+            existing.raw_data = raw_data
+            existing.add_stage(ExtractionStage.RAW)
+        else:
+            existing = NPCExtraction(
+                npc_id=npc_id,
+                npc_name=npc_name,
+                npc_variant=npc_variant,
+                raw_data=raw_data,
+                completed_stages=[ExtractionStage.RAW]
+            )
+        
+        return await self.save_extraction(existing)
+
+    async def update_stage_data(self, npc_id: int, stage: ExtractionStage, data: dict) -> NPCExtraction | None:
+        """Update a specific pipeline stage with data."""
+        extraction = await self.get_cached_extraction(npc_id)
+        if not extraction:
+            return None
+            
+        if stage == ExtractionStage.TEXT:
+            extraction.text_analysis = data
+        elif stage == ExtractionStage.VISUAL:
+            extraction.visual_analysis = data  
+        elif stage == ExtractionStage.PROFILE:
+            extraction.character_profile = data
+            
+        extraction.add_stage(stage)
+        return await self.save_extraction(extraction)
+
+    async def get_incomplete_extractions(self, missing_stage: ExtractionStage) -> list[NPCExtraction]:
+        """Get all extractions missing a specific pipeline stage."""
+        async with self.async_session() as session:
+            statement = select(NPCExtraction)
+            result = await session.exec(statement)
+            extractions = result.all()
+            
+            return [ext for ext in extractions if not ext.has_stage(missing_stage)]
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession]:

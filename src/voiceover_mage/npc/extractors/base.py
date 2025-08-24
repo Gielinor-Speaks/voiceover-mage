@@ -1,23 +1,23 @@
-# ABOUTME: Abstract interface for extracting NPC data from various sources
-# ABOUTME: Defines protocols and base classes for crawling-agnostic data extraction
+# ABOUTME: Simple protocol interface for extracting raw NPC data from sources
+# ABOUTME: Phase 1 focus - extract markdown and image URLs without LLM processing
 
 from typing import Protocol
 
-from ..models import NPCWikiSourcedData
+from ..persistence import NPCRawExtraction
 
 
-class NPCDataExtractor(Protocol):
-    """Protocol for extracting NPC data by ID. This protocol defines the methods required for
-    extracting NPC data from any data source."""
+class RawNPCExtractor(Protocol):
+    """Protocol for extracting raw NPC data by ID. Simple interface for getting
+    markdown content and image URLs without LLM analysis."""
 
-    async def extract_npc_data(self, npc_id: int) -> NPCWikiSourcedData:
-        """Extract NPC data from the given NPC ID.
+    async def extract(self, npc_id: int) -> NPCRawExtraction:
+        """Extract raw NPC data from the given NPC ID.
 
         Args:
             npc_id: The ID of the NPC to extract data from
 
         Returns:
-            The extracted NPC data object
+            Raw extraction with markdown content and image URLs
 
         Raises:
             ExtractionError: If extraction fails
