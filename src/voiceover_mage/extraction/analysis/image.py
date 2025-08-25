@@ -132,7 +132,24 @@ class ImageDetailExtractor(dspy.Module):
         self.logger = get_logger(__name__)
 
     def forward(self, markdown_content: str, npc_name: str, npc_variant: str | None = None) -> NPCVisualCharacteristics:
-        """Two-step process: identify images then analyze visual characteristics.
+        """Sync wrapper around aforward() for backward compatibility.
+
+        Args:
+            markdown_content: Raw markdown content from wiki page
+            npc_name: Name of the NPC to extract images for
+            npc_variant: Optional variant (e.g., 'Pete', 'Ardougne', 'Blue shirt')
+
+        Returns:
+            NPCVisualCharacteristics with URLs, visual traits, and confidence
+        """
+        import asyncio
+
+        return asyncio.run(self.aforward(markdown_content, npc_name, npc_variant))
+
+    async def aforward(
+        self, markdown_content: str, npc_name: str, npc_variant: str | None = None
+    ) -> NPCVisualCharacteristics:
+        """Async version of forward for native DSPy async support.
 
         Args:
             markdown_content: Raw markdown content from wiki page
@@ -145,8 +162,8 @@ class ImageDetailExtractor(dspy.Module):
         # Prepare variant for DSPy (convert None to "None" string)
         variant_str = npc_variant or "None"
 
-        # Step 1: Identify correct images from markdown
-        image_id_result = self.identify_images(
+        # Step 1: Identify correct images from markdown using async
+        image_id_result = await self.identify_images.acall(
             markdown_content=markdown_content, npc_name=npc_name, npc_variant=variant_str
         )
         # Type annotation for DSPy result (has chathead_url, image_url attributes)
@@ -166,8 +183,8 @@ class ImageDetailExtractor(dspy.Module):
             if not chathead_image and not main_image:
                 raise ValueError("Both chathead and main images are unavailable for visual analysis.")
 
-            # Use DSPy vision analysis with actual images
-            visual_result = self.analyze_visuals(
+            # Use DSPy vision analysis with actual images using async
+            visual_result = await self.analyze_visuals.acall(
                 npc_name=npc_name, npc_variant=variant_str, chathead_image=chathead_image, main_image=main_image
             )
             # Type annotation for DSPy result (has age_category, build_type, etc. attributes)
@@ -193,8 +210,6 @@ class ImageDetailExtractor(dspy.Module):
             )()  # Instantiate the class
             # Type annotation for fallback result
             visual_result = cast("VisualAnalysisSignature", visual_result)
-
-        # Visual characteristics are now descriptive strings (no parsing needed)
 
         # Combine confidence scores (weighted average)
         combined_confidence = image_id_result.confidence * 0.3 + visual_result.confidence * 0.7

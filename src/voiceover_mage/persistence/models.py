@@ -4,6 +4,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import JSON, Column, Field, SQLModel
 
 from voiceover_mage.core.models import NPCWikiSourcedData
@@ -73,6 +74,8 @@ class NPCRawExtraction(SQLModel, table=True):
         """Add a stage to completed stages."""
         if stage.value not in self.completed_stages:
             self.completed_stages.append(stage.value)
+            # Tell SQLAlchemy that the list has been modified
+            flag_modified(self, "completed_stages")
 
     def has_stage(self, stage: "ExtractionStage") -> bool:
         """Check if a stage has been completed."""

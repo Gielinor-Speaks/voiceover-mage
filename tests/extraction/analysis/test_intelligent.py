@@ -218,14 +218,18 @@ class TestNPCIntelligentExtractor:
             extraction_success=True,
         )
 
-        # Mock the forward method
+        # Mock the aforward method (the new async implementation)
         expected_result = Mock(spec=NPCDetails)
         expected_result.npc_name = "Async Test"
 
-        with patch.object(self.extractor, "forward", return_value=expected_result) as mock_forward:
+        # Create an async mock for aforward
+        async def mock_aforward(extraction):
+            return expected_result
+
+        with patch.object(self.extractor, "aforward", side_effect=mock_aforward) as mock_aforward:
             result = await self.extractor.extract_async(raw_extraction)
 
-            mock_forward.assert_called_once_with(raw_extraction)
+            mock_aforward.assert_called_once_with(raw_extraction)
             assert result.npc_name == "Async Test"
 
     def test_error_handling_in_text_extraction(self):
@@ -238,9 +242,16 @@ class TestNPCIntelligentExtractor:
             extraction_success=True,
         )
 
-        # Mock text extractor to raise exception when called directly
+        # Mock text extractor to raise exception when aforward() is called
         original_text_extractor = self.extractor.text_extractor
-        self.extractor.text_extractor = Mock(side_effect=Exception("Text extraction failed"))
+
+        # Create an async mock that raises the expected exception
+        async def mock_aforward(*args, **kwargs):
+            raise Exception("Text extraction failed")
+
+        mock_text_extractor = Mock()
+        mock_text_extractor.aforward = mock_aforward
+        self.extractor.text_extractor = mock_text_extractor
 
         with pytest.raises(Exception, match="Text extraction failed"):
             self.extractor.forward(raw_extraction)
@@ -267,10 +278,27 @@ class TestNPCIntelligentExtractor:
         original_image = self.extractor.image_extractor
         original_synth = self.extractor.synthesizer
 
-        # Mock with direct assignment
-        self.extractor.text_extractor = Mock(return_value=mock_text_result)
-        self.extractor.image_extractor = Mock(return_value=mock_visual_result)
-        self.extractor.synthesizer = Mock(side_effect=Exception("Synthesis failed"))
+        # Create async mocks for text and image extraction
+        async def mock_text_aforward(*args, **kwargs):
+            return mock_text_result
+
+        async def mock_image_aforward(*args, **kwargs):
+            return mock_visual_result
+
+        async def mock_synth_aforward(*args, **kwargs):
+            raise Exception("Synthesis failed")
+
+        # Mock with async methods
+        mock_text_extractor = Mock()
+        mock_text_extractor.aforward = mock_text_aforward
+        mock_image_extractor = Mock()
+        mock_image_extractor.aforward = mock_image_aforward
+        mock_synthesizer = Mock()
+        mock_synthesizer.aforward = mock_synth_aforward
+
+        self.extractor.text_extractor = mock_text_extractor
+        self.extractor.image_extractor = mock_image_extractor
+        self.extractor.synthesizer = mock_synthesizer
 
         try:
             with pytest.raises(Exception, match="Synthesis failed"):

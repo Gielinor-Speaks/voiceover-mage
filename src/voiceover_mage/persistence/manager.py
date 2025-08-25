@@ -13,18 +13,20 @@ from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.persistence.models import NPCRawExtraction as NPCExtraction
+from voiceover_mage.utils.logging import get_logger
 
 
 class DatabaseManager:
     """Manages async database operations for NPC data persistence."""
 
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///./npc_data.db"):
+    def __init__(self, database_url: str = "sqlite+aiosqlite:///./data/voiceover_mage.db"):
         """Initialize the database manager.
 
         Args:
             database_url: SQLAlchemy async database URL (e.g. sqlite+aiosqlite:///./db.db)
         """
         self.database_url = database_url
+        self.logger = get_logger(__name__)
         self.engine = create_async_engine(
             database_url,
             echo=False,  # Set to True for SQL query logging
@@ -77,7 +79,15 @@ class DatabaseManager:
                     # Update the existing one
                     for field_name in extraction.model_fields:
                         if hasattr(extraction, field_name):
-                            setattr(existing, field_name, getattr(extraction, field_name))
+                            new_value = getattr(extraction, field_name)
+                            if field_name == "completed_stages":
+                                # Merge stages instead of overwriting
+                                existing_stages = set(existing.completed_stages or [])
+                                new_stages = set(new_value or [])
+                                merged_stages = list(existing_stages | new_stages)
+                                setattr(existing, field_name, merged_stages)
+                            else:
+                                setattr(existing, field_name, new_value)
                     session.add(existing)
                     extraction = existing
                 else:

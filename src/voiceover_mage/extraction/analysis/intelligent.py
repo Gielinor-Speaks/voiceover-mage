@@ -1,7 +1,6 @@
 # ABOUTME: Coordinating DSPy module that orchestrates text and visual extraction for Phase 2
 # ABOUTME: Implements the NPCIntelligentExtractor from the Phase 2 design architecture
 
-from typing import cast
 
 import dspy
 
@@ -58,7 +57,7 @@ class NPCIntelligentExtractor(dspy.Module):
         self.synthesizer = DetailSynthesizer()
 
     def forward(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
-        """Transform raw extraction into intelligent NPC profile.
+        """Sync wrapper around aforward() for backward compatibility.
 
         Args:
             raw_extraction: Phase 1 raw markdown and basic image URLs
@@ -66,30 +65,50 @@ class NPCIntelligentExtractor(dspy.Module):
         Returns:
             NPCDetails: Comprehensive character profile ready for voice generation
         """
-        # Run text and image extraction in parallel for efficiency
-        # Both modules analyze the same markdown but extract different aspects
-        text_characteristics = self.text_extractor(
-            markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+        import asyncio
+
+        return asyncio.run(self.aforward(raw_extraction))
+
+    async def aforward(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
+        """True async version with parallel text/image extraction.
+
+        This eliminates run_in_executor by using DSPy's native async support
+        and runs text/image analysis in parallel for maximum performance.
+
+        Args:
+            raw_extraction: Phase 1 raw markdown and basic image URLs
+
+        Returns:
+            NPCDetails: Comprehensive character profile ready for voice generation
+        """
+        import asyncio
+
+        # Run text and image extraction in parallel using asyncio.gather()
+        # This is true concurrency, not thread-based like run_in_executor
+        async def run_text_extraction():
+            return await self.text_extractor.aforward(
+                markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+            )
+
+        async def run_image_extraction():
+            return await self.image_extractor.aforward(
+                markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+            )
+
+        # Await both extractions in parallel - much faster than sequential
+        text_characteristics, image_characteristics = await asyncio.gather(
+            run_text_extraction(), run_image_extraction()
         )
 
-        image_characteristics = self.image_extractor(
-            markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
-        )
-
-        # Synthesize into unified profile
-        npc_details = cast(
-            NPCDetails,
-            self.synthesizer(
-                text_characteristics=text_characteristics,
-                visual_characteristics=image_characteristics,
-                npc_name=raw_extraction.npc_name,
-            ),
+        # Synthesize the results into unified profile
+        npc_details = await self.synthesizer.aforward(
+            text_characteristics=text_characteristics,
+            visual_characteristics=image_characteristics,
+            npc_name=raw_extraction.npc_name,
         )
 
         return npc_details
 
     async def extract_async(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
-        """Async version for potential future parallel processing."""
-        # For now, run synchronously since DSPy modules aren't async
-        # Future: Could run text/image extraction in parallel threads
-        return self.forward(raw_extraction)
+        """Legacy async method - now delegates to aforward for compatibility."""
+        return await self.aforward(raw_extraction)

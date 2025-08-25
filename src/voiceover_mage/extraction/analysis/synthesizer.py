@@ -91,7 +91,27 @@ class DetailSynthesizer(dspy.Module):
         visual_characteristics: NPCVisualCharacteristics,
         npc_name: str,
     ) -> NPCDetails:
-        """Synthesize text and visual characteristics into unified NPC profile.
+        """Sync wrapper around aforward() for backward compatibility.
+
+        Args:
+            text_characteristics: Text-based personality and behavioral traits
+            visual_characteristics: Visual appearance and image information
+            npc_name: Name of the NPC
+
+        Returns:
+            NPCDetails with synthesized and unified character profile
+        """
+        import asyncio
+
+        return asyncio.run(self.aforward(text_characteristics, visual_characteristics, npc_name))
+
+    async def aforward(
+        self,
+        text_characteristics: NPCTextCharacteristics,
+        visual_characteristics: NPCVisualCharacteristics,
+        npc_name: str,
+    ) -> NPCDetails:
+        """Async version of forward for native DSPy async support.
 
         Args:
             text_characteristics: Text-based personality and behavioral traits
@@ -105,10 +125,12 @@ class DetailSynthesizer(dspy.Module):
         text_json = text_characteristics.model_dump_json()
         visual_json = visual_characteristics.model_dump_json()
 
-        # Use DSPy to synthesize the characteristics intelligently
+        # Use DSPy's native async support for synthesis
         synthesis_result = cast(
             DetailSynthesisSignature,
-            self.synthesize(npc_name=npc_name, text_characteristics=text_json, visual_characteristics=visual_json),
+            await self.synthesize.acall(
+                npc_name=npc_name, text_characteristics=text_json, visual_characteristics=visual_json
+            ),
         )
 
         # Calculate overall confidence as weighted average

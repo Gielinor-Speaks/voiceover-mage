@@ -95,13 +95,38 @@ class TestUnifiedPipelineService:
             # Mock the intelligent extractor
             mock_extractor = Mock()
             mock_extractor.extract = AsyncMock(return_value=sample_raw_extraction)
+
+            # Create a mock NPCDetails for the aforward method
+            from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+
+            mock_npc_details = Mock(spec=NPCDetails)
+            mock_npc_details.personality_traits = "Test personality"
+            mock_npc_details.occupation = "Test occupation"
+            mock_npc_details.social_role = "Test role"
+            mock_npc_details.dialogue_patterns = "Test dialogue"
+            mock_npc_details.emotional_range = "Test emotions"
+            mock_npc_details.background_lore = "Test lore"
+            mock_npc_details.age_category = "Test age"
+            mock_npc_details.build_type = "Test build"
+            mock_npc_details.attire_style = "Test attire"
+            mock_npc_details.distinctive_features = "Test features"
+            mock_npc_details.color_palette = "Test colors"
+            mock_npc_details.visual_archetype = "Test archetype"
+            mock_npc_details.chathead_image_url = "https://test.com/chathead.png"
+            mock_npc_details.image_url = "https://test.com/image.png"
+            mock_npc_details.text_confidence = 0.8
+            mock_npc_details.visual_confidence = 0.7
+            mock_npc_details.overall_confidence = 0.75
+
+            # Mock the aforward method that our new code uses
+            mock_extractor.aforward = AsyncMock(return_value=mock_npc_details)
             mock_extractor_class.return_value = mock_extractor
 
             # Create pipeline without API key
             pipeline = UnifiedPipelineService(database=mock_database, force_refresh=False, api_key=None)
 
-            # Mock database operations
-            mock_database.save_extraction = AsyncMock(return_value=sample_raw_extraction)
+            # Mock database operations - return the object that was passed in
+            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
             mock_database.get_cached_extraction = AsyncMock(return_value=None)
 
             result = await pipeline.run_full_pipeline(1001)
@@ -146,6 +171,31 @@ class TestUnifiedPipelineService:
             mock_extractor.text_extractor = Mock()
             mock_extractor.image_extractor = Mock()
             mock_extractor.synthesizer = Mock()
+
+            # Create a proper NPCDetails mock for the aforward method
+            from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+
+            mock_npc_details = Mock(spec=NPCDetails)
+            mock_npc_details.personality_traits = "friendly and helpful guide"
+            mock_npc_details.occupation = "helpful guide"
+            mock_npc_details.social_role = "village guide"
+            mock_npc_details.dialogue_patterns = "friendly greetings and helpful directions"
+            mock_npc_details.emotional_range = "cheerful and welcoming"
+            mock_npc_details.background_lore = "local guide helping adventurers"
+            mock_npc_details.age_category = "young adult"
+            mock_npc_details.build_type = "average build"
+            mock_npc_details.attire_style = "simple traveler clothes"
+            mock_npc_details.distinctive_features = "warm smile"
+            mock_npc_details.color_palette = "earth tones"
+            mock_npc_details.visual_archetype = "helpful guide"
+            mock_npc_details.chathead_image_url = "https://test.com/chathead.png"
+            mock_npc_details.image_url = "https://test.com/image.png"
+            mock_npc_details.text_confidence = 0.8
+            mock_npc_details.visual_confidence = 0.9
+            mock_npc_details.overall_confidence = 0.85
+
+            # Mock the aforward method that our new code uses
+            mock_extractor.aforward = AsyncMock(return_value=mock_npc_details)
             mock_extractor_class.return_value = mock_extractor
 
             # Create pipeline with API key
@@ -174,7 +224,10 @@ class TestUnifiedPipelineService:
                 patch.object(pipeline.intelligent_extractor, "image_extractor", return_value=mock_visual_result),
                 patch.object(pipeline.intelligent_extractor, "synthesizer", return_value=mock_synthesis_result),
             ):
-                # Mock database operations
+                # Mock database operations - return the object that was passed in
+                mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
+                mock_database.get_cached_extraction = AsyncMock(return_value=None)
+
                 mock_database.async_session.return_value.__aenter__ = AsyncMock()
                 mock_database.async_session.return_value.__aexit__ = AsyncMock()
                 session_mock = Mock()
@@ -242,7 +295,10 @@ class TestUnifiedPipelineService:
 
             pipeline = UnifiedPipelineService(database=mock_database, api_key="test-api-key")
 
-            # Mock database operations
+            # Mock database operations - return the object that was passed in
+            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
+            mock_database.get_cached_extraction = AsyncMock(return_value=None)
+
             mock_database.async_session.return_value.__aenter__ = AsyncMock()
             mock_database.async_session.return_value.__aexit__ = AsyncMock()
             session_mock = Mock()
@@ -286,8 +342,8 @@ class TestUnifiedPipelineService:
             with patch.object(
                 pipeline.intelligent_extractor, "text_extractor", side_effect=Exception("Text analysis failed")
             ):
-                # Mock database operations
-                mock_database.save_extraction = AsyncMock(return_value=sample_raw_extraction)
+                # Mock database operations - return the object that was passed in
+                mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
                 mock_database.get_cached_extraction = AsyncMock(return_value=None)
 
                 # Pipeline should continue and complete what it can
@@ -389,7 +445,10 @@ class TestUnifiedPipelineService:
 
                 pipeline = UnifiedPipelineService(database=mock_database)
 
-            # Mock database operations
+            # Mock database operations - return the object that was passed in
+            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
+            mock_database.get_cached_extraction = AsyncMock(return_value=None)
+
             mock_database.async_session.return_value.__aenter__ = AsyncMock()
             mock_database.async_session.return_value.__aexit__ = AsyncMock()
             session_mock = Mock()

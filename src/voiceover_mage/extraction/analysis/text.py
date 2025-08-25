@@ -77,8 +77,12 @@ class TextDetailExtractor(dspy.Module):
         super().__init__()
         self.extract_text_details = dspy.ChainOfThought(TextExtractionSignature)
 
-    def forward(self, markdown_content: str, npc_name: str, npc_variant: str | None = None) -> NPCTextCharacteristics:
-        """Extract text characteristics for the given NPC.
+    async def aforward(
+        self, markdown_content: str, npc_name: str, npc_variant: str | None = None
+    ) -> NPCTextCharacteristics:
+        """Extract text characteristics for the given NPC using async DSPy.
+
+        This is the main implementation - forward() is a sync wrapper around this.
 
         Args:
             markdown_content: Raw markdown content from wiki page
@@ -91,14 +95,12 @@ class TextDetailExtractor(dspy.Module):
         # Prepare variant for DSPy (convert None to "None" string)
         variant_str = npc_variant or "None"
 
-        # Use DSPy to analyze the markdown content intelligently
-        result = self.extract_text_details(
+        # Use DSPy's native async support via acall()
+        result = await self.extract_text_details.acall(
             markdown_content=markdown_content, npc_name=npc_name, npc_variant=variant_str
         )
         # Type annotation for DSPy result
         result = cast("TextExtractionSignature", result)
-
-        # Characteristics are now descriptive strings (no parsing needed)
 
         return NPCTextCharacteristics(
             personality_traits=result.personality_traits,
@@ -110,3 +112,18 @@ class TextDetailExtractor(dspy.Module):
             confidence_score=float(result.confidence),
             reasoning=result.reasoning,
         )
+
+    def forward(self, markdown_content: str, npc_name: str, npc_variant: str | None = None) -> NPCTextCharacteristics:
+        """Sync wrapper around aforward() for backward compatibility.
+
+        Args:
+            markdown_content: Raw markdown content from wiki page
+            npc_name: Name of the NPC to extract characteristics for
+            npc_variant: Optional variant (e.g., 'Pete', 'Ardougne', 'Blue shirt')
+
+        Returns:
+            NPCTextCharacteristics with personality traits and context
+        """
+        import asyncio
+
+        return asyncio.run(self.aforward(markdown_content, npc_name, npc_variant))
