@@ -3,11 +3,11 @@
 
 from voiceover_mage.extraction.base import RawNPCExtractor
 from voiceover_mage.extraction.wiki.markdown import MarkdownNPCExtractor
-from voiceover_mage.persistence import DatabaseManager, NPCRawExtraction
+from voiceover_mage.persistence import DatabaseManager, NPCData
 from voiceover_mage.utils.logging import get_logger
 
-# Using NPCRawExtraction as NPCExtraction alias during transition
-NPCExtraction = NPCRawExtraction
+# Using NPCData as NPCExtraction alias during transition
+NPCExtraction = NPCData
 
 
 class NPCExtractionService:
@@ -86,7 +86,7 @@ class NPCExtractionService:
 
         return saved_extraction
 
-    async def extract_multiple_npcs(self, npc_ids: list[int], progress_callback=None) -> list[NPCRawExtraction]:
+    async def extract_multiple_npcs(self, npc_ids: list[int], progress_callback=None) -> list[NPCData]:
         """Extract data for multiple NPCs with optional progress reporting.
 
         Args:
@@ -114,7 +114,7 @@ class NPCExtractionService:
                     "Failed to extract NPC in batch", npc_id=npc_id, error=str(e), current_index=i, total=total
                 )
                 # Add failed extraction record
-                failed_extraction = NPCRawExtraction(
+                failed_extraction = NPCData(
                     npc_id=npc_id,
                     npc_name=f"NPC_{npc_id}",
                     wiki_url="",
@@ -162,7 +162,7 @@ class NPCExtractionService:
         await self.database.clear_cache()
         self.logger.info("Cleared all cached extractions")
 
-    async def _save_extraction_forced(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
+    async def _save_extraction_forced(self, extraction: NPCData) -> NPCData:
         """Save extraction bypassing cache check (for force refresh)."""
         # Delete existing extraction if it exists
         existing = await self.database.get_cached_extraction(extraction.npc_id)

@@ -5,7 +5,7 @@
 import dspy
 
 from voiceover_mage.config import get_config
-from voiceover_mage.persistence import NPCRawExtraction
+from voiceover_mage.persistence import NPCData
 from voiceover_mage.utils.logging import get_logger
 
 from .image import ImageDetailExtractor
@@ -36,7 +36,7 @@ class NPCIntelligentExtractor(dspy.Module):
     """Coordinating DSPy module for Phase 2 intelligent NPC extraction.
 
     This module implements the Phase 2 architecture:
-    NPCRawExtraction (Phase 1 output)
+    NPCData (Phase 1 output)
         ↓
     NPCIntelligentExtractor (DSPy Module)
         ├── TextDetailExtractor (DSPy Module)    (analyzes markdown → text profile)
@@ -56,7 +56,7 @@ class NPCIntelligentExtractor(dspy.Module):
         self.image_extractor = ImageDetailExtractor()
         self.synthesizer = DetailSynthesizer()
 
-    def forward(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
+    def forward(self, raw_extraction: NPCData) -> NPCDetails:
         """Sync wrapper around aforward() for backward compatibility.
 
         Args:
@@ -69,7 +69,7 @@ class NPCIntelligentExtractor(dspy.Module):
 
         return asyncio.run(self.aforward(raw_extraction))
 
-    async def aforward(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
+    async def aforward(self, raw_extraction: NPCData) -> NPCDetails:
         """True async version with parallel text/image extraction.
 
         This eliminates run_in_executor by using DSPy's native async support
@@ -109,6 +109,6 @@ class NPCIntelligentExtractor(dspy.Module):
 
         return npc_details
 
-    async def extract_async(self, raw_extraction: NPCRawExtraction) -> NPCDetails:
+    async def extract_async(self, raw_extraction: NPCData) -> NPCDetails:
         """Legacy async method - now delegates to aforward for compatibility."""
         return await self.aforward(raw_extraction)

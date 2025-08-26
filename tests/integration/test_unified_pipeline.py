@@ -9,7 +9,7 @@ import pytest
 from voiceover_mage.core.models import ExtractionStage
 from voiceover_mage.core.unified_pipeline import UnifiedPipelineService
 from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCRawExtraction
+from voiceover_mage.persistence.models import NPCData
 
 
 class TestUnifiedPipelineService:
@@ -46,7 +46,7 @@ class TestUnifiedPipelineService:
     @pytest.fixture
     def sample_raw_extraction(self):
         """Create a sample raw extraction for testing."""
-        return NPCRawExtraction(
+        return NPCData(
             npc_id=1001,
             npc_name="Integration Test NPC",
             wiki_url="https://wiki.com/Integration_Test_NPC",
@@ -362,7 +362,7 @@ class TestUnifiedPipelineService:
             mock_extractor_class.return_value = mock_extractor
 
             # Mock cached extraction
-            cached_extraction = NPCRawExtraction(
+            cached_extraction = NPCData(
                 npc_id=1001,
                 npc_name="Status Test NPC",
                 wiki_url="https://wiki.com/Status_Test_NPC",
@@ -424,7 +424,7 @@ class TestUnifiedPipelineService:
     @pytest.mark.asyncio
     async def test_pipeline_with_empty_markdown(self, mock_database):
         """Test pipeline behavior with empty markdown content."""
-        empty_extraction = NPCRawExtraction(
+        empty_extraction = NPCData(
             npc_id=1002,
             npc_name="Empty Test NPC",
             wiki_url="https://wiki.com/Empty_Test_NPC",

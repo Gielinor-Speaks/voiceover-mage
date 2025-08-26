@@ -3,15 +3,15 @@
 
 from datetime import UTC, datetime
 
-from voiceover_mage.persistence.models import NPCRawExtraction
+from voiceover_mage.persistence.models import NPCData
 
 
-class TestNPCRawExtractionValidation:
-    """Test NPCRawExtraction model validation and constraints."""
+class TestNPCDataValidation:
+    """Test NPCData model validation and constraints."""
 
     def test_minimal_required_fields(self):
         """Test creation with only required fields."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://oldschool.runescape.wiki/w/Hans",
@@ -30,7 +30,7 @@ class TestNPCRawExtractionValidation:
     def test_all_fields(self):
         """Test creation with all fields."""
         now = datetime.now(UTC)
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             id=1,
             npc_id=2,
             npc_name="Wise Old Man",
@@ -51,7 +51,7 @@ class TestNPCRawExtractionValidation:
 
     def test_error_state(self):
         """Test extraction in error state."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=404,
             npc_name="Missing NPC",
             wiki_url="https://oldschool.runescape.wiki/w/Missing",
@@ -72,7 +72,7 @@ class TestNPCRawExtractionValidation:
         large_content += "## Dialogue\n" + ("'Hello there!' " * 50) + "\n\n"
         large_content += "## Trivia\n" + ("Interesting fact. " * 200)
 
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Verbose NPC",
             wiki_url="https://example.com",
@@ -84,7 +84,7 @@ class TestNPCRawExtractionValidation:
 
     def test_empty_optional_fields(self):
         """Test that optional fields can be None."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Simple NPC",
             wiki_url="https://example.com",
@@ -100,7 +100,7 @@ class TestNPCRawExtractionValidation:
 
     def test_special_characters_in_strings(self):
         """Test handling of special characters in string fields."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="TzHaar-Ket-Rak",  # Special characters in name
             wiki_url="https://oldschool.runescape.wiki/w/TzHaar-Ket-Rak",
@@ -115,7 +115,7 @@ class TestNPCRawExtractionValidation:
 
     def test_url_validation(self):
         """Test URL field handling."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Test",
             wiki_url="https://oldschool.runescape.wiki/w/Test_(npc)",  # Parentheses in URL
@@ -132,7 +132,7 @@ class TestNPCRawExtractionValidation:
 
     def test_model_dict_export(self):
         """Test exporting model to dictionary."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
@@ -150,7 +150,7 @@ class TestNPCRawExtractionValidation:
 
     def test_model_json_export(self):
         """Test exporting model to JSON string."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
@@ -164,7 +164,7 @@ class TestNPCRawExtractionValidation:
 
     def test_model_copy_with_update(self):
         """Test creating a copy with updates."""
-        original = NPCRawExtraction(
+        original = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",

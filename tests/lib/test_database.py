@@ -9,7 +9,7 @@ import pytest_asyncio
 from sqlalchemy.pool import StaticPool
 
 from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCRawExtraction
+from voiceover_mage.persistence.models import NPCData
 
 
 @pytest_asyncio.fixture
@@ -42,8 +42,8 @@ async def temp_db():
 
 @pytest.fixture
 def sample_extraction():
-    """Create a sample NPCRawExtraction for testing."""
-    return NPCRawExtraction(
+    """Create a sample NPCData for testing."""
+    return NPCData(
         npc_id=1,
         npc_name="Hans",
         wiki_url="https://oldschool.runescape.wiki/w/Hans",
@@ -66,7 +66,7 @@ class TestDatabaseManager:
         assert result is None  # No data yet, but query should work
 
     @pytest.mark.asyncio
-    async def test_save_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCRawExtraction):
+    async def test_save_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCData):
         """Test saving an extraction to the database."""
         saved = await temp_db.save_extraction(sample_extraction)
 
@@ -76,7 +76,7 @@ class TestDatabaseManager:
         assert saved.created_at is not None
 
     @pytest.mark.asyncio
-    async def test_get_cached_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCRawExtraction):
+    async def test_get_cached_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCData):
         """Test retrieving a cached extraction."""
         # Save first
         await temp_db.save_extraction(sample_extraction)
@@ -96,7 +96,7 @@ class TestDatabaseManager:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_duplicate_npc_id_handling(self, temp_db: DatabaseManager, sample_extraction: NPCRawExtraction):
+    async def test_duplicate_npc_id_handling(self, temp_db: DatabaseManager, sample_extraction: NPCData):
         """Test handling of duplicate npc_id entries."""
         # Save first extraction
         first = await temp_db.save_extraction(sample_extraction)
@@ -114,7 +114,7 @@ class TestDatabaseManager:
     @pytest.mark.asyncio
     async def test_error_extraction_persistence(self, temp_db: DatabaseManager):
         """Test saving extraction with error."""
-        error_extraction = NPCRawExtraction(
+        error_extraction = NPCData(
             npc_id=404,
             npc_name="Unknown",
             wiki_url="https://oldschool.runescape.wiki/w/Unknown",
@@ -137,7 +137,7 @@ class TestDatabaseManager:
         """Test storing large markdown content."""
         large_markdown = "# Test\n" + ("Lorem ipsum " * 1000)
 
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=2,
             npc_name="Test NPC",
             wiki_url="https://example.com",
@@ -152,7 +152,7 @@ class TestDatabaseManager:
         assert cached.raw_markdown == large_markdown
 
     @pytest.mark.asyncio
-    async def test_clear_cache(self, temp_db: DatabaseManager, sample_extraction: NPCRawExtraction):
+    async def test_clear_cache(self, temp_db: DatabaseManager, sample_extraction: NPCData):
         """Test clearing the cache."""
         # Save some data
         await temp_db.save_extraction(sample_extraction)
@@ -168,7 +168,7 @@ class TestDatabaseManager:
     async def test_concurrent_operations(self, temp_db: DatabaseManager):
         """Test concurrent database operations."""
         extractions = [
-            NPCRawExtraction(
+            NPCData(
                 npc_id=i,
                 npc_name=f"NPC {i}",
                 wiki_url=f"https://example.com/{i}",
@@ -193,12 +193,12 @@ class TestDatabaseManager:
         assert all(c is not None for c in cached)
 
 
-class TestNPCRawExtraction:
-    """Test the NPCRawExtraction model."""
+class TestNPCData:
+    """Test the NPCData model."""
 
     def test_model_creation(self):
-        """Test creating an NPCRawExtraction model."""
-        extraction = NPCRawExtraction(
+        """Test creating an NPCData model."""
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
@@ -214,7 +214,7 @@ class TestNPCRawExtraction:
 
     def test_model_with_images(self):
         """Test model with image URLs."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
@@ -229,7 +229,7 @@ class TestNPCRawExtraction:
 
     def test_model_with_error(self):
         """Test model with error state."""
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Unknown",
             wiki_url="https://example.com",
@@ -244,7 +244,7 @@ class TestNPCRawExtraction:
     def test_datetime_default(self):
         """Test that created_at has a proper default."""
         before = datetime.now(UTC)
-        extraction = NPCRawExtraction(
+        extraction = NPCData(
             npc_id=1,
             npc_name="Hans",
             wiki_url="https://example.com",

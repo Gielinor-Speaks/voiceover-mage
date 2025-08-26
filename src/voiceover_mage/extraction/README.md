@@ -22,7 +22,7 @@ External Sources (Wiki) → extraction/wiki/ → extraction/analysis/ → Struct
 - `synthesizer.py` - Data synthesis module
 
 ### `models.py`
-- `NPCRawExtractionData` - Raw wiki data structure
+- `NPCDataData` - Raw wiki data structure
 - `NPCTextCharacteristics` - Text analysis results
 - `NPCImageCharacteristics` - Image analysis results
 

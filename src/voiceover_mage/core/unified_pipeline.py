@@ -11,7 +11,7 @@ from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.extraction.wiki.crawl4ai import Crawl4AINPCExtractor
 from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCRawExtraction
+from voiceover_mage.persistence.models import NPCData
 from voiceover_mage.utils.logging import get_logger
 from voiceover_mage.utils.retry import LLMAPIError, llm_retry
 
@@ -49,7 +49,7 @@ class UnifiedPipelineService:
         self.raw_service = NPCExtractionService(database=self.database, force_refresh=force_refresh)
         self.intelligent_extractor = NPCIntelligentExtractor()
 
-    async def run_full_pipeline(self, npc_id: int) -> NPCRawExtraction:
+    async def run_full_pipeline(self, npc_id: int) -> NPCData:
         """Run the complete extraction pipeline for an NPC.
 
         Args:
@@ -95,7 +95,7 @@ class UnifiedPipelineService:
 
         return extraction
 
-    async def _run_raw_extraction(self, npc_id: int) -> NPCRawExtraction:
+    async def _run_raw_extraction(self, npc_id: int) -> NPCData:
         """Stage 1: Basic raw extraction."""
         self.logger.info("Running raw extraction stage", npc_id=npc_id)
 
@@ -110,7 +110,7 @@ class UnifiedPipelineService:
 
         return extraction
 
-    async def _run_llm_extraction(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
+    async def _run_llm_extraction(self, extraction: NPCData) -> NPCData:
         """Stage 2: LLM-based extraction using Crawl4AI."""
         if not self.api_key:
             self.logger.warning("Skipping LLM extraction - no API key provided")
@@ -143,7 +143,7 @@ class UnifiedPipelineService:
 
         return extraction
 
-    async def _run_intelligent_analysis(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
+    async def _run_intelligent_analysis(self, extraction: NPCData) -> NPCData:
         """Stage 3: Intelligent text and visual analysis."""
         self.logger.info(
             "Running intelligent analysis stage", npc_id=extraction.npc_id, markdown_length=len(extraction.raw_markdown)
@@ -241,7 +241,7 @@ class UnifiedPipelineService:
 
     @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
     async def _run_intelligent_extraction_with_retry(
-        self, extraction: NPCRawExtraction
+        self, extraction: NPCData
     ) -> tuple[NPCDetails, NPCTextCharacteristics, NPCVisualCharacteristics]:
         """Run the complete intelligent extraction pipeline with retry logic.
 
@@ -295,7 +295,7 @@ class UnifiedPipelineService:
             cast(NPCVisualCharacteristics, image_characteristics),
         )
 
-    async def _save_extraction(self, extraction: NPCRawExtraction) -> NPCRawExtraction:
+    async def _save_extraction(self, extraction: NPCData) -> NPCData:
         """Save extraction to database."""
         return await self.database.save_extraction(extraction)
 

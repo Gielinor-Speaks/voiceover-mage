@@ -12,7 +12,7 @@ from voiceover_mage.core.models import ExtractionStage, NPCWikiSourcedData
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
-from voiceover_mage.persistence.models import NPCRawExtraction as NPCExtraction
+from voiceover_mage.persistence.models import NPCData as NPCExtraction
 from voiceover_mage.utils.logging import get_logger
 
 

@@ -44,7 +44,7 @@ def save_extraction(extraction: NPCTextExtraction, npc_id: int):
 ### SQLModel Schema (Progressive Enhancement)
 Each phase adds its own table, maintaining full extraction history:
 
-1. **Phase 1**: `NPCRawExtraction` - Markdown and image URLs
+1. **Phase 1**: `NPCData` - Markdown and image URLs
 2. **Phase 2**: `NPCTextAnalysis` - DSPy text extraction results
 3. **Phase 3**: `NPCVisualAnalysis` - DSPy image analysis results
 4. **Phase 4**: `NPCCharacterProfile` - Synthesized profiles
@@ -61,7 +61,7 @@ Each phase adds its own table, maintaining full extraction history:
 
 ### Requirements
 - [ ] Refactor `crawl4ai.py` to use markdown extraction (no LLM)
-- [ ] Create `NPCRawExtraction` SQLModel for persistence
+- [ ] Create `NPCData` SQLModel for persistence
 - [ ] Return simple data structure with:
   - NPC name and wiki URL
   - Raw markdown content
@@ -85,7 +85,7 @@ Each phase adds its own table, maintaining full extraction history:
   - Location
   - Quest appearances
 - [ ] Create SQLModel persistence (`NPCTextAnalysis` - database table):
-  - Links to `NPCRawExtraction`
+  - Links to `NPCData`
   - Stores serialized DSPy result
   - Tracks DSPy model version
 - [ ] Build DSPy signature for text extraction
@@ -108,7 +108,7 @@ Each phase adds its own table, maintaining full extraction history:
   - Clothing/attire
   - Facial features
 - [ ] Create SQLModel persistence (`NPCVisualAnalysis` - database table):
-  - Links to `NPCRawExtraction`
+  - Links to `NPCData`
   - Stores serialized DSPy result
   - Tracks which image URL was analyzed
 - [ ] Build DSPy signature for image analysis

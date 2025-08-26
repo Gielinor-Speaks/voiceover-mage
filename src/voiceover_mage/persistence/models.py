@@ -17,14 +17,14 @@ if TYPE_CHECKING:
     from voiceover_mage.core.models import ExtractionStage
 
 
-class NPCRawExtraction(SQLModel, table=True):
+class NPCData(SQLModel, table=True):
     """Raw extraction data from NPC wiki pages.
 
     This model stores the unprocessed markdown and image URLs extracted from
     wiki pages, providing a cache layer before any LLM analysis.
     """
 
-    __tablename__ = "npc_raw_extractions"  # type: ignore[assignment]
+    __tablename__ = "npc"  # type: ignore[assignment]
 
     # Primary key
     id: int | None = Field(default=None, primary_key=True)

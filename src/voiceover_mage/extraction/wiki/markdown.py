@@ -9,7 +9,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from tenacity import retry, stop_after_attempt
 
 from voiceover_mage.extraction.base import ExtractionError, RawNPCExtractor
-from voiceover_mage.persistence import NPCRawExtraction
+from voiceover_mage.persistence import NPCData
 from voiceover_mage.utils.logging import get_logger, log_extraction_step, suppress_library_output
 
 
@@ -45,7 +45,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
 
         self.logger.info("Initialized MarkdownNPCExtractor", headless=headless)
 
-    async def extract(self, npc_id: int) -> NPCRawExtraction:
+    async def extract(self, npc_id: int) -> NPCData:
         """Extract raw markdown and image URLs for the given NPC ID."""
         try:
             url = await self._get_npc_page_url(npc_id)
@@ -55,7 +55,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
             markdown_content = await self._extract_markdown_content(url)
             chathead_url, image_url = await self._extract_image_urls(markdown_content, npc_name, npc_variant)
 
-            extraction = NPCRawExtraction(
+            extraction = NPCData(
                 npc_id=npc_id,
                 npc_name=npc_name,
                 wiki_url=url,
@@ -81,7 +81,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
             self.logger.error("Failed to extract NPC data", npc_id=npc_id, error=str(e), error_type=type(e).__name__)
 
             # Return failed extraction record
-            return NPCRawExtraction(
+            return NPCData(
                 npc_id=npc_id,
                 npc_name=f"NPC_{npc_id}",
                 wiki_url="",

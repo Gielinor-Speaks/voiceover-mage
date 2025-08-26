@@ -3,14 +3,14 @@
 
 from typing import Protocol
 
-from voiceover_mage.persistence import NPCRawExtraction
+from voiceover_mage.persistence import NPCData
 
 
 class RawNPCExtractor(Protocol):
     """Protocol for extracting raw NPC data by ID. Simple interface for getting
     markdown content and image URLs without LLM analysis."""
 
-    async def extract(self, npc_id: int) -> NPCRawExtraction:
+    async def extract(self, npc_id: int) -> NPCData:
         """Extract raw NPC data from the given NPC ID.
 
         Args:
