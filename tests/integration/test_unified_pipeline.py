@@ -47,7 +47,7 @@ class TestUnifiedPipelineService:
     def sample_raw_extraction(self):
         """Create a sample raw extraction for testing."""
         return NPCData(
-            npc_id=1001,
+            id=1001,
             npc_name="Integration Test NPC",
             wiki_url="https://wiki.com/Integration_Test_NPC",
             raw_markdown="""
@@ -132,7 +132,7 @@ class TestUnifiedPipelineService:
             result = await pipeline.run_full_pipeline(1001)
 
             # Verify raw extraction completed
-            assert result.npc_id == 1001
+            assert result.id == 1001
             assert result.npc_name == "Integration Test NPC"
             assert ExtractionStage.RAW.value in result.completed_stages
 
@@ -252,7 +252,7 @@ class TestUnifiedPipelineService:
                 result = await pipeline.run_full_pipeline(1001)
 
                 # Verify all phases completed
-                assert result.npc_id == 1001
+                assert result.id == 1001
                 assert ExtractionStage.RAW.value in result.completed_stages
                 assert ExtractionStage.TEXT.value in result.completed_stages
                 assert ExtractionStage.VISUAL.value in result.completed_stages
@@ -350,7 +350,7 @@ class TestUnifiedPipelineService:
                 result = await pipeline.run_full_pipeline(1001)
 
                 # Should have basic extraction even if analysis fails
-                assert result.npc_id == 1001
+                assert result.id == 1001
                 assert ExtractionStage.RAW.value in result.completed_stages
 
     @pytest.mark.asyncio
@@ -363,7 +363,7 @@ class TestUnifiedPipelineService:
 
             # Mock cached extraction
             cached_extraction = NPCData(
-                npc_id=1001,
+                id=1001,
                 npc_name="Status Test NPC",
                 wiki_url="https://wiki.com/Status_Test_NPC",
                 raw_markdown="# Status Test NPC\n\nMinimal test content.",
@@ -425,7 +425,7 @@ class TestUnifiedPipelineService:
     async def test_pipeline_with_empty_markdown(self, mock_database):
         """Test pipeline behavior with empty markdown content."""
         empty_extraction = NPCData(
-            npc_id=1002,
+            id=1002,
             npc_name="Empty Test NPC",
             wiki_url="https://wiki.com/Empty_Test_NPC",
             raw_markdown="",  # Empty markdown
@@ -460,6 +460,6 @@ class TestUnifiedPipelineService:
             result = await pipeline.run_full_pipeline(1002)
 
             # Should complete raw extraction but skip intelligent analysis
-            assert result.npc_id == 1002
+            assert result.id == 1002
             assert ExtractionStage.RAW.value in result.completed_stages
             # Intelligent analysis should be skipped due to empty markdown

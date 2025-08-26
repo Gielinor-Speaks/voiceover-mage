@@ -109,7 +109,7 @@ async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refres
                 status_table.add_column("Field", style="cyan")
                 status_table.add_column("Value", style="white")
 
-                status_table.add_row("NPC ID", str(extraction.npc_id))
+                status_table.add_row("NPC ID", str(extraction.id))
                 status_table.add_row("Name", extraction.npc_name)
                 status_table.add_row("Wiki URL", extraction.wiki_url)
                 status_table.add_row("Success", f"[{status_style}]{extraction.extraction_success}[/{status_style}]")

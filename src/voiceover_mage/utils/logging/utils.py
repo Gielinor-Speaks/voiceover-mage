@@ -215,7 +215,7 @@ def log_extraction_step(step_name: str, npc_id: int | None = None) -> Callable[[
 
                 # Check kwargs
                 if actual_npc_id is None:
-                    actual_npc_id = kwargs.get("npc_id") or kwargs.get("id")
+                    actual_npc_id = kwargs.get("id") or kwargs.get("npc_id")
 
             bound_logger = logger.bind(step=step_name, npc_id=actual_npc_id, pipeline="npc_extraction")
 

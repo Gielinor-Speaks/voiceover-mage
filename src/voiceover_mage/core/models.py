@@ -107,7 +107,7 @@ class NPCDetails(BaseModel):
     """
 
     # Identity
-    npc_id: int
+    id: int
     npc_name: str
     npc_variant: str | None = None
 
@@ -136,7 +136,7 @@ class NPCProfile(BaseModel):
     """
 
     # Core identity
-    npc_id: int
+    id: int
     npc_name: str
     npc_variant: str | None = None
 

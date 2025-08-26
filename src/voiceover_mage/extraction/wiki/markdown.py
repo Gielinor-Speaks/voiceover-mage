@@ -56,7 +56,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
             chathead_url, image_url = await self._extract_image_urls(markdown_content, npc_name, npc_variant)
 
             extraction = NPCData(
-                npc_id=npc_id,
+                id=npc_id,
                 npc_name=npc_name,
                 wiki_url=url,
                 raw_markdown=markdown_content,
@@ -82,7 +82,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
 
             # Return failed extraction record
             return NPCData(
-                npc_id=npc_id,
+                id=npc_id,
                 npc_name=f"NPC_{npc_id}",
                 wiki_url="",
                 raw_markdown="",

@@ -116,25 +116,25 @@ class UnifiedPipelineService:
             self.logger.warning("Skipping LLM extraction - no API key provided")
             return extraction
 
-        self.logger.info("Running LLM extraction stage", npc_id=extraction.npc_id)
+        self.logger.info("Running LLM extraction stage", npc_id=extraction.id)
 
         try:
             # Use Crawl4AI extractor for structured data
             crawl_extractor = Crawl4AINPCExtractor(api_key=self.api_key)
-            wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(extraction.npc_id)
+            wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(extraction.id)
 
             # Store NPCWikiSourcedData directly with TypeAdapter
             extraction.raw_data = wiki_data
             extraction.add_stage(ExtractionStage.TEXT)
             await self._save_extraction(extraction)
 
-            self.logger.info("LLM extraction complete", npc_id=extraction.npc_id, npc_name=wiki_data.name.value)
+            self.logger.info("LLM extraction complete", npc_id=extraction.id, npc_name=wiki_data.name.value)
         except Exception as e:
             import traceback
 
             self.logger.error(
                 "LLM extraction failed",
-                npc_id=extraction.npc_id,
+                npc_id=extraction.id,
                 error=str(e),
                 error_type=type(e).__name__,
                 traceback=traceback.format_exc(),
@@ -146,7 +146,7 @@ class UnifiedPipelineService:
     async def _run_intelligent_analysis(self, extraction: NPCData) -> NPCData:
         """Stage 3: Intelligent text and visual analysis."""
         self.logger.info(
-            "Running intelligent analysis stage", npc_id=extraction.npc_id, markdown_length=len(extraction.raw_markdown)
+            "Running intelligent analysis stage", npc_id=extraction.id, markdown_length=len(extraction.raw_markdown)
         )
 
         try:
@@ -175,7 +175,7 @@ class UnifiedPipelineService:
 
             self.logger.info(
                 "Intelligent analysis complete - character profile generated",
-                npc_id=extraction.npc_id,
+                npc_id=extraction.id,
                 personality_traits=npc_details.personality_traits[:100] if npc_details.personality_traits else "None",
                 occupation=npc_details.occupation,
                 overall_confidence=npc_details.overall_confidence,
@@ -184,7 +184,7 @@ class UnifiedPipelineService:
             # Handle LLM-specific errors with appropriate logging
             self.logger.error(
                 "LLM API failure during intelligent analysis",
-                npc_id=extraction.npc_id,
+                npc_id=extraction.id,
                 error=str(e),
                 error_type=type(e).__name__,
             )
@@ -194,7 +194,7 @@ class UnifiedPipelineService:
 
             self.logger.error(
                 "Intelligent analysis failed",
-                npc_id=extraction.npc_id,
+                npc_id=extraction.id,
                 error=str(e),
                 error_type=type(e).__name__,
                 traceback=traceback.format_exc(),
@@ -299,15 +299,15 @@ class UnifiedPipelineService:
         """Save extraction to database."""
         return await self.database.save_extraction(extraction)
 
-    async def get_extraction_status(self, npc_id: int) -> dict:
+    async def get_extraction_status(self, id: int) -> dict:
         """Get the current status of an extraction."""
-        extraction = await self.database.get_cached_extraction(npc_id)
+        extraction = await self.database.get_cached_extraction(id)
 
         if not extraction:
-            return {"npc_id": npc_id, "exists": False, "completed_stages": [], "has_character_profile": False}
+            return {"npc_id": id, "exists": False, "completed_stages": [], "has_character_profile": False}
 
         return {
-            "npc_id": npc_id,
+            "npc_id": id,
             "exists": True,
             "npc_name": extraction.npc_name,
             "completed_stages": extraction.completed_stages,

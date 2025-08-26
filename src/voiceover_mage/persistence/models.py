@@ -26,11 +26,8 @@ class NPCData(SQLModel, table=True):
 
     __tablename__ = "npc"  # type: ignore[assignment]
 
-    # Primary key
-    id: int | None = Field(default=None, primary_key=True)
-
-    # NPC identification
-    npc_id: int = Field(index=True, description="Unique NPC ID from the wiki")
+    # Primary key - using OSRS NPC ID directly
+    id: int = Field(primary_key=True, description="Unique NPC ID from OSRS/wiki")
     npc_name: str = Field(description="Name of the NPC")
     npc_variant: str | None = Field(default=None, description="NPC variant if applicable")
     wiki_url: str = Field(description="Full URL to the NPC's wiki page")

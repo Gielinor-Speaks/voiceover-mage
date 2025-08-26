@@ -44,7 +44,7 @@ async def temp_db():
 def sample_extraction():
     """Create a sample NPCData for testing."""
     return NPCData(
-        npc_id=1,
+        id=1,
         npc_name="Hans",
         wiki_url="https://oldschool.runescape.wiki/w/Hans",
         raw_markdown="# Hans\n\nHans is the servant of Duke Horacio...",
@@ -71,7 +71,7 @@ class TestDatabaseManager:
         saved = await temp_db.save_extraction(sample_extraction)
 
         assert saved.id is not None
-        assert saved.npc_id == sample_extraction.npc_id
+        assert saved.id == sample_extraction.id
         assert saved.npc_name == sample_extraction.npc_name
         assert saved.created_at is not None
 
@@ -82,10 +82,10 @@ class TestDatabaseManager:
         await temp_db.save_extraction(sample_extraction)
 
         # Retrieve
-        cached = await temp_db.get_cached_extraction(sample_extraction.npc_id)
+        cached = await temp_db.get_cached_extraction(sample_extraction.id)
 
         assert cached is not None
-        assert cached.npc_id == sample_extraction.npc_id
+        assert cached.id == sample_extraction.id
         assert cached.npc_name == sample_extraction.npc_name
         assert cached.raw_markdown == sample_extraction.raw_markdown
 
@@ -107,7 +107,7 @@ class TestDatabaseManager:
 
         # Should update existing or create new based on implementation
         # For caching, we want to keep the first one
-        cached = await temp_db.get_cached_extraction(sample_extraction.npc_id)
+        cached = await temp_db.get_cached_extraction(sample_extraction.id)
         assert cached is not None
         assert cached.id == first.id  # Should return the first one
 
@@ -115,7 +115,7 @@ class TestDatabaseManager:
     async def test_error_extraction_persistence(self, temp_db: DatabaseManager):
         """Test saving extraction with error."""
         error_extraction = NPCData(
-            npc_id=404,
+            id=404,
             npc_name="Unknown",
             wiki_url="https://oldschool.runescape.wiki/w/Unknown",
             raw_markdown="",
@@ -138,7 +138,7 @@ class TestDatabaseManager:
         large_markdown = "# Test\n" + ("Lorem ipsum " * 1000)
 
         extraction = NPCData(
-            npc_id=2,
+            id=2,
             npc_name="Test NPC",
             wiki_url="https://example.com",
             raw_markdown=large_markdown,
@@ -161,7 +161,7 @@ class TestDatabaseManager:
         await temp_db.clear_cache()
 
         # Should be empty now
-        cached = await temp_db.get_cached_extraction(sample_extraction.npc_id)
+        cached = await temp_db.get_cached_extraction(sample_extraction.id)
         assert cached is None
 
     @pytest.mark.asyncio
@@ -169,7 +169,7 @@ class TestDatabaseManager:
         """Test concurrent database operations."""
         extractions = [
             NPCData(
-                npc_id=i,
+                id=i,
                 npc_name=f"NPC {i}",
                 wiki_url=f"https://example.com/{i}",
                 raw_markdown=f"Content for NPC {i}",
@@ -199,14 +199,14 @@ class TestNPCData:
     def test_model_creation(self):
         """Test creating an NPCData model."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="# Hans",
             extraction_success=True,
         )
 
-        assert extraction.npc_id == 1
+        assert extraction.id == 1
         assert extraction.npc_name == "Hans"
         assert extraction.chathead_image_url is None
         assert extraction.image_url is None
@@ -215,7 +215,7 @@ class TestNPCData:
     def test_model_with_images(self):
         """Test model with image URLs."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="# Hans",
@@ -230,7 +230,7 @@ class TestNPCData:
     def test_model_with_error(self):
         """Test model with error state."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Unknown",
             wiki_url="https://example.com",
             raw_markdown="",
@@ -245,7 +245,7 @@ class TestNPCData:
         """Test that created_at has a proper default."""
         before = datetime.now(UTC)
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="# Hans",

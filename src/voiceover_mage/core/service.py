@@ -115,7 +115,7 @@ class NPCExtractionService:
                 )
                 # Add failed extraction record
                 failed_extraction = NPCData(
-                    npc_id=npc_id,
+                    id=npc_id,
                     npc_name=f"NPC_{npc_id}",
                     wiki_url="",
                     raw_markdown="",
@@ -165,7 +165,7 @@ class NPCExtractionService:
     async def _save_extraction_forced(self, extraction: NPCData) -> NPCData:
         """Save extraction bypassing cache check (for force refresh)."""
         # Delete existing extraction if it exists
-        existing = await self.database.get_cached_extraction(extraction.npc_id)
+        existing = await self.database.get_cached_extraction(extraction.id)
         if existing:
             async with self.database.async_session() as session:
                 await session.delete(existing)

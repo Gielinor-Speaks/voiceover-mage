@@ -54,7 +54,7 @@ class DatabaseManager:
             The cached extraction or None if not found
         """
         async with self.async_session() as session:
-            statement = select(NPCExtraction).where(NPCExtraction.npc_id == npc_id)
+            statement = select(NPCExtraction).where(NPCExtraction.id == npc_id)
             result = await session.exec(statement)
             return result.first()
 
@@ -73,8 +73,8 @@ class DatabaseManager:
                 # This is an update - merge the changes
                 session.add(extraction)
             else:
-                # This is a new extraction - check if one exists with same npc_id
-                existing = await self.get_cached_extraction(extraction.npc_id)
+                # This is a new extraction - check if one exists with same id
+                existing = await self.get_cached_extraction(extraction.id)
                 if existing:
                     # Update the existing one
                     for field_name in extraction.model_fields:
@@ -134,7 +134,7 @@ class DatabaseManager:
             existing.add_stage(ExtractionStage.RAW)
         else:
             existing = NPCExtraction(
-                npc_id=npc_id,
+                id=npc_id,
                 npc_name=npc_name,
                 npc_variant=npc_variant,
                 wiki_url=wiki_url,

@@ -93,7 +93,7 @@ class TestNPCIntelligentExtractor:
         """Test the forward method with complete pipeline execution."""
         # Create mock raw extraction
         raw_extraction = NPCData(
-            npc_id=1001,
+            id=1001,
             npc_name="Test Warrior",
             wiki_url="https://wiki.com/Test_Warrior",
             raw_markdown="""
@@ -175,7 +175,7 @@ class TestNPCIntelligentExtractor:
     def test_forward_with_minimal_extraction(self):
         """Test forward method with minimal extraction data."""
         minimal_extraction = NPCData(
-            npc_id=1002,
+            id=1002,
             npc_name="Minimal NPC",
             wiki_url="https://wiki.com/Minimal_NPC",
             raw_markdown="# Minimal NPC\n\nVery little information available.",
@@ -211,7 +211,7 @@ class TestNPCIntelligentExtractor:
     async def test_extract_async_method(self):
         """Test the async extraction method."""
         raw_extraction = NPCData(
-            npc_id=1003,
+            id=1003,
             npc_name="Async Test",
             wiki_url="https://wiki.com/Async_Test",
             raw_markdown="# Async Test\n\nTest async functionality.",
@@ -235,7 +235,7 @@ class TestNPCIntelligentExtractor:
     def test_error_handling_in_text_extraction(self):
         """Test error handling when text extraction fails."""
         raw_extraction = NPCData(
-            npc_id=1004,
+            id=1004,
             npc_name="Error Test",
             wiki_url="https://wiki.com/Error_Test",
             raw_markdown="# Error Test",
@@ -262,7 +262,7 @@ class TestNPCIntelligentExtractor:
     def test_error_handling_in_synthesis(self):
         """Test error handling when synthesis fails."""
         raw_extraction = NPCData(
-            npc_id=1005,
+            id=1005,
             npc_name="Synthesis Error Test",
             wiki_url="https://wiki.com/Synthesis_Error_Test",
             raw_markdown="# Synthesis Error Test",
@@ -312,7 +312,7 @@ class TestNPCIntelligentExtractor:
     def test_complex_character_extraction(self):
         """Test extraction of complex character with rich data."""
         complex_extraction = NPCData(
-            npc_id=1006,
+            id=1006,
             npc_name="Archmage Valdris",
             wiki_url="https://wiki.com/Archmage_Valdris",
             raw_markdown="""

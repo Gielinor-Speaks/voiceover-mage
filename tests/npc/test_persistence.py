@@ -12,13 +12,13 @@ class TestNPCDataValidation:
     def test_minimal_required_fields(self):
         """Test creation with only required fields."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://oldschool.runescape.wiki/w/Hans",
             raw_markdown="# Hans\nContent here",
         )
 
-        assert extraction.npc_id == 1
+        assert extraction.id == 1
         assert extraction.npc_name == "Hans"
         assert extraction.wiki_url == "https://oldschool.runescape.wiki/w/Hans"
         assert extraction.raw_markdown == "# Hans\nContent here"
@@ -31,8 +31,7 @@ class TestNPCDataValidation:
         """Test creation with all fields."""
         now = datetime.now(UTC)
         extraction = NPCData(
-            id=1,
-            npc_id=2,
+            id=2,
             npc_name="Wise Old Man",
             wiki_url="https://oldschool.runescape.wiki/w/Wise_Old_Man",
             raw_markdown="# Wise Old Man\nA powerful wizard...",
@@ -43,8 +42,7 @@ class TestNPCDataValidation:
             error_message=None,
         )
 
-        assert extraction.id == 1
-        assert extraction.npc_id == 2
+        assert extraction.id == 2
         assert extraction.npc_name == "Wise Old Man"
         assert extraction.created_at == now
         assert extraction.extraction_success is True
@@ -52,7 +50,7 @@ class TestNPCDataValidation:
     def test_error_state(self):
         """Test extraction in error state."""
         extraction = NPCData(
-            npc_id=404,
+            id=404,
             npc_name="Missing NPC",
             wiki_url="https://oldschool.runescape.wiki/w/Missing",
             raw_markdown="",  # Empty markdown for failed extraction
@@ -73,7 +71,7 @@ class TestNPCDataValidation:
         large_content += "## Trivia\n" + ("Interesting fact. " * 200)
 
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Verbose NPC",
             wiki_url="https://example.com",
             raw_markdown=large_content,
@@ -85,7 +83,7 @@ class TestNPCDataValidation:
     def test_empty_optional_fields(self):
         """Test that optional fields can be None."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Simple NPC",
             wiki_url="https://example.com",
             raw_markdown="Content",
@@ -101,7 +99,7 @@ class TestNPCDataValidation:
     def test_special_characters_in_strings(self):
         """Test handling of special characters in string fields."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="TzHaar-Ket-Rak",  # Special characters in name
             wiki_url="https://oldschool.runescape.wiki/w/TzHaar-Ket-Rak",
             raw_markdown="# TzHaar-Ket-Rak\n\n*Italic* **Bold** `Code` [Link](url)",
@@ -116,7 +114,7 @@ class TestNPCDataValidation:
     def test_url_validation(self):
         """Test URL field handling."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Test",
             wiki_url="https://oldschool.runescape.wiki/w/Test_(npc)",  # Parentheses in URL
             raw_markdown="Content",
@@ -133,7 +131,7 @@ class TestNPCDataValidation:
     def test_model_dict_export(self):
         """Test exporting model to dictionary."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="Content",
@@ -141,7 +139,7 @@ class TestNPCDataValidation:
 
         data = extraction.model_dump()
 
-        assert data["npc_id"] == 1
+        assert data["id"] == 1
         assert data["npc_name"] == "Hans"
         assert data["wiki_url"] == "https://example.com"
         assert data["raw_markdown"] == "Content"
@@ -151,7 +149,7 @@ class TestNPCDataValidation:
     def test_model_json_export(self):
         """Test exporting model to JSON string."""
         extraction = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="Content",
@@ -159,13 +157,13 @@ class TestNPCDataValidation:
 
         json_str = extraction.model_dump_json()
 
-        assert '"npc_id":1' in json_str or '"npc_id": 1' in json_str
+        assert '"id":1' in json_str or '"id": 1' in json_str
         assert '"npc_name":"Hans"' in json_str or '"npc_name": "Hans"' in json_str
 
     def test_model_copy_with_update(self):
         """Test creating a copy with updates."""
         original = NPCData(
-            npc_id=1,
+            id=1,
             npc_name="Hans",
             wiki_url="https://example.com",
             raw_markdown="Original content",
@@ -179,7 +177,7 @@ class TestNPCDataValidation:
             }
         )
 
-        assert updated.npc_id == original.npc_id
+        assert updated.id == original.id
         assert updated.npc_name == original.npc_name
         assert updated.raw_markdown == "Updated content"
         assert updated.extraction_success is False
