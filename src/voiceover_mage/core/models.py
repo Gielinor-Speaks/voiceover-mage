@@ -2,7 +2,7 @@
 # ABOUTME: Pipeline orchestration enums and high-level domain models for voice generation
 
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ class ExtractionStage(str, Enum):
     VISUAL = "visual"
     SYNTHESIS = "synthesis"
     PROFILE = "profile"
+    VOICE_GENERATION = "voice_generation"
     COMPLETE = "complete"
 
 
@@ -153,3 +154,13 @@ class NPCProfile(BaseModel):
     # Quality metrics
     confidence_score: float = Field(ge=0.0, le=1.0, description="Overall confidence in the profile")
     generation_notes: str = Field(default="", description="Notes for voice generation process")
+
+
+class VoiceGenerationResult(BaseModel):
+    """Result from the voice sample generation process."""
+
+    audio_sample_path: str = Field(description="The path to the saved audio sample file.")
+    sample_text_used: str = Field(description="The exact text used to generate the sample.")
+    generation_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Provider-specific metadata from the generation process."
+    )

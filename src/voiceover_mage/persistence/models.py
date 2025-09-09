@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import JSON, Column, Field, SQLModel
 
-from voiceover_mage.core.models import NPCWikiSourcedData
+from voiceover_mage.core.models import NPCWikiSourcedData, VoiceGenerationResult
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
@@ -51,6 +51,11 @@ class NPCData(SQLModel, table=True):
     )
     character_profile: NPCDetails | None = Field(
         default=None, sa_column=Column(PydanticJson(NPCDetails)), description="Character profile data"
+    )
+    voice_generation: VoiceGenerationResult | None = Field(
+        default=None,
+        sa_column=Column(PydanticJson(VoiceGenerationResult)),
+        description="Voice generation results from the provider",
     )
     completed_stages: list[str] = Field(
         default_factory=list, sa_column=Column(JSON), description="Completed pipeline stages"

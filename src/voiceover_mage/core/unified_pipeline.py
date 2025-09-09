@@ -1,17 +1,20 @@
 # ABOUTME: Unified pipeline service that coordinates all extraction stages
 # ABOUTME: Manages database persistence and stage progression for NPC processing
 
+from pathlib import Path
 from typing import cast
 
-from voiceover_mage.core.models import ExtractionStage, NPCWikiSourcedData
+from voiceover_mage.core.models import ExtractionStage, NPCProfile, NPCWikiSourcedData
 from voiceover_mage.core.service import NPCExtractionService
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.intelligent import NPCIntelligentExtractor
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
+from voiceover_mage.extraction.voice.elevenlabs import ElevenLabsVoicePromptGenerator
 from voiceover_mage.extraction.wiki.crawl4ai import Crawl4AINPCExtractor
 from voiceover_mage.persistence.manager import DatabaseManager
 from voiceover_mage.persistence.models import NPCData
+from voiceover_mage.services.voice.elevenlabs import ElevenLabsVoiceService
 from voiceover_mage.utils.logging import get_logger
 from voiceover_mage.utils.retry import LLMAPIError, llm_retry
 
@@ -48,6 +51,9 @@ class UnifiedPipelineService:
         # Initialize extraction services
         self.raw_service = NPCExtractionService(database=self.database, force_refresh=force_refresh)
         self.intelligent_extractor = NPCIntelligentExtractor()
+        # Initialize voice services
+        self.voice_prompt_generator = ElevenLabsVoicePromptGenerator()
+        self.voice_service = ElevenLabsVoiceService()
 
     async def run_full_pipeline(self, npc_id: int) -> NPCData:
         """Run the complete extraction pipeline for an NPC.
@@ -86,6 +92,17 @@ class UnifiedPipelineService:
         # Stage 4: Synthesis is now handled within the intelligent analysis stage
         # No separate synthesis needed since NPCIntelligentExtractor does everything
 
+        # Stage 5: Voice generation (preview sample)
+        try:
+            extraction = await self._run_voice_generation(extraction)
+        except Exception as e:
+            self.logger.error(
+                "Voice generation stage failed",
+                npc_id=npc_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
         self.logger.info(
             "Pipeline completed",
             npc_id=npc_id,
@@ -93,6 +110,76 @@ class UnifiedPipelineService:
             completed_stages=extraction.completed_stages,
         )
 
+        return extraction
+
+    def _map_details_to_profile(self, npc_id: int, npc_name: str, details: NPCDetails) -> NPCProfile:
+        """Map synthesized NPCDetails to NPCProfile for voice generation."""
+        # Heuristic mapping based on available fields
+        personality = details.personality_traits or ""
+        voice_desc = (
+            f"{details.dialogue_patterns}. Age category: {details.age_category}. "
+            f"Tone hints from visual archetype: {details.visual_archetype}."
+        ).strip()
+        age_range = details.age_category or "Unknown"
+        emotional_profile = details.emotional_range or "Neutral"
+        character_archetype = details.social_role or details.visual_archetype or ""
+        speaking_style = details.dialogue_patterns or ""
+        confidence_score = details.overall_confidence or 0.0
+        generation_notes = details.synthesis_notes or ""
+
+        return NPCProfile(
+            id=npc_id,
+            npc_name=npc_name,
+            personality=personality,
+            voice_description=voice_desc,
+            age_range=age_range,
+            emotional_profile=emotional_profile,
+            character_archetype=character_archetype,
+            speaking_style=speaking_style,
+            confidence_score=confidence_score,
+            generation_notes=generation_notes,
+        )
+
+    async def _run_voice_generation(self, extraction: NPCData) -> NPCData:
+        """Stage: Generate a preview voice sample and persist metadata."""
+        if not extraction.character_profile:
+            self.logger.info("Skipping voice generation - no character profile", npc_id=extraction.id)
+            return extraction
+
+        details = extraction.character_profile
+        profile = self._map_details_to_profile(extraction.id, extraction.npc_name, details)
+
+        # Generate descriptive prompt
+        voice_details = await self.voice_prompt_generator.aforward(profile)
+
+        self.logger.info(
+            "Generated voice prompt",
+            npc_id=extraction.id,
+            **voice_details,
+        )
+
+        # Call provider and save audio
+        audio_bytes = await self.voice_service.generate_preview_audio(**voice_details)
+
+        # audio_bytes is a tuple of bytes, we should iterate over each until it is exhausted
+        out_dir = Path("data/voice_previews")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, audio in enumerate(audio_bytes):
+            out_path = out_dir / f"{extraction.id}_preview_{i + 1}.mp3"
+            with open(out_path, "wb") as f:
+                f.write(audio)
+            self.logger.info("Saved voice preview", npc_id=extraction.id, sample_path=str(out_path))
+
+        # # Persist result
+        # extraction.voice_generation = VoiceGenerationResult(
+        #     audio_sample_path=str(out_path),
+        #     sample_text_used=sample_text,
+        #     generation_metadata={"provider": "elevenlabs"},
+        # )
+        # extraction.add_stage(ExtractionStage.VOICE_GENERATION)
+        # extraction = await self._save_extraction(extraction)
+        self.logger.info("Voice generation complete", npc_id=extraction.id, sample_path=str(out_path))
         return extraction
 
     async def _run_raw_extraction(self, npc_id: int) -> NPCData:

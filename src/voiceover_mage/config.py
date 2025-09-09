@@ -21,6 +21,10 @@ class Config(BaseSettings):
 
     # AI/API Configuration
     gemini_api_key: str = Field(default="", description="Google Gemini API key for NPC data extraction")
+    elevenlabs_api_key: str = Field(
+        default="",
+        description="ElevenLabs API key for voice generation",
+    )
 
     # Database Configuration
     database_url: str = Field(
