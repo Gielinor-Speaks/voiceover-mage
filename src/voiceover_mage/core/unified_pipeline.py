@@ -150,36 +150,61 @@ class UnifiedPipelineService:
         profile = self._map_details_to_profile(extraction.id, extraction.npc_name, details)
 
         # Generate descriptive prompt
-        voice_details = await self.voice_prompt_generator.aforward(profile)
+        voice_description = await self.voice_prompt_generator.aforward(profile)
 
-        self.logger.info(
-            "Generated voice prompt",
-            npc_id=extraction.id,
-            **voice_details,
+        self.logger.info("Generated voice prompt", npc_id=extraction.id, voice_description=voice_description)
+
+        # Call provider and save audio clips
+        audio_clips = await self.voice_service.generate_preview_audio(
+            voice_description=voice_description.get("description"), sample_text=voice_description.get("sample_text")
         )
-
-        # Call provider and save audio
-        audio_bytes = await self.voice_service.generate_preview_audio(**voice_details)
 
         # audio_bytes is a tuple of bytes, we should iterate over each until it is exhausted
         out_dir = Path("data/voice_previews")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        for i, audio in enumerate(audio_bytes):
+        last_out_path: Path | None = None
+        for i, audio in enumerate(audio_clips):
             out_path = out_dir / f"{extraction.id}_preview_{i + 1}.mp3"
             with open(out_path, "wb") as f:
                 f.write(audio)
             self.logger.info("Saved voice preview", npc_id=extraction.id, sample_path=str(out_path))
+            last_out_path = out_path
 
-        # # Persist result
-        # extraction.voice_generation = VoiceGenerationResult(
-        #     audio_sample_path=str(out_path),
-        #     sample_text_used=sample_text,
-        #     generation_metadata={"provider": "elevenlabs"},
-        # )
-        # extraction.add_stage(ExtractionStage.VOICE_GENERATION)
-        # extraction = await self._save_extraction(extraction)
-        self.logger.info("Voice generation complete", npc_id=extraction.id, sample_path=str(out_path))
+            # Persist to database as a voice sample
+            try:
+                await self.database.save_voice_sample(
+                    npc_id=extraction.id,
+                    voice_prompt=voice_description.get("description", ""),
+                    sample_text=voice_description.get("sample_text", ""),
+                    audio_bytes=audio,
+                    provider="elevenlabs",
+                    generator="text_to_voice.design:eleven_ttv_v3",
+                    is_representative=False,
+                    provider_metadata={
+                        "model_id": "eleven_ttv_v3",
+                        "preview_index": i + 1,
+                        "total_previews": len(audio_clips),
+                    },
+                )
+            except Exception as e:
+                self.logger.error(
+                    "Failed to persist voice sample",
+                    npc_id=extraction.id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    sample_index=i + 1,
+                )
+        # Mark voice generation stage complete
+        extraction.add_stage(ExtractionStage.VOICE_GENERATION)
+        extraction = await self._save_extraction(extraction)
+        # Log summary
+        self.logger.info(
+            "Voice generation complete",
+            npc_id=extraction.id,
+            sample_path=str(last_out_path) if last_out_path else None,
+            samples=len(audio_clips),
+        )
         return extraction
 
     async def _run_raw_extraction(self, npc_id: int) -> NPCData:

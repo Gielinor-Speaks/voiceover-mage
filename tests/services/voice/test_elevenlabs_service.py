@@ -38,7 +38,8 @@ async def test_generate_preview_audio_success(mock_elevenlabs_sdk):
     result = await service.generate_preview_audio(voice_desc, sample_text)
 
     # Assert
-    assert result == audio_bytes
+    assert isinstance(result, tuple)
+    assert result and result[0] == audio_bytes
     mock_elevenlabs_sdk.text_to_voice.design.assert_called_once()
     _, kwargs = mock_elevenlabs_sdk.text_to_voice.design.call_args
     assert kwargs["voice_description"] == voice_desc

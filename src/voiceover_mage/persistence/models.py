@@ -2,8 +2,9 @@
 # ABOUTME: Checkpoint-based pipeline state management with TypeAdapter integration
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import LargeBinary
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import JSON, Column, Field, SQLModel
 
@@ -92,3 +93,37 @@ class NPCData(SQLModel, table=True):
 # - NPCDetails for character_profile column
 #
 # See: https://github.com/fastapi/sqlmodel/issues/63#issuecomment-2727480036
+
+
+class VoiceSample(SQLModel, table=True):
+    """A generated voice sample associated with an NPC.
+
+    Stores raw audio bytes along with the prompt used and provider metadata.
+    """
+
+    __tablename__ = "voice_sample"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True, description="Primary key for the voice sample")
+
+    # Association
+    npc_id: int = Field(foreign_key="npc.id", index=True, description="Foreign key to NPCData.id")
+
+    # Prompting
+    voice_prompt: str = Field(description="Descriptive voice prompt used for generation")
+    sample_text: str = Field(description="Sample text used for preview generation")
+
+    # Provider/generator metadata
+    provider: str = Field(description="Provider name, e.g., 'elevenlabs'")
+    generator: str = Field(description="Generator/model identifier, e.g., 'text_to_voice.design:eleven_ttv_v3'")
+    provider_metadata: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON), description="Provider-specific metadata/options"
+    )
+
+    # Binary audio content (e.g., MP3 bytes)
+    audio_bytes: bytes = Field(sa_column=Column(LargeBinary), description="Raw audio bytes of the sample")
+
+    # Selection flag
+    is_representative: bool = Field(default=False, description="Whether this is the chosen sample for the NPC")
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Creation timestamp")

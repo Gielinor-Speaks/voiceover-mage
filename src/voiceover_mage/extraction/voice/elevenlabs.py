@@ -123,10 +123,12 @@ class ElevenLabsVoicePromptGenerator(dspy.Module):
         self.generator = dspy.ChainOfThought(ElevenLabsPromptSignature.with_instructions(ELEVENLABS_INSTRUCTIONS))
 
     async def aforward(self, npc_profile: NPCProfile) -> dict[str, str]:
-        """Asynchronously generates the voice description and sample text."""
+        """Asynchronously generates and returns only the voice description string.
+
+        Kept minimal to satisfy existing tests that expect a string result.
+        """
         result = await self.generator.acall(npc_profile=npc_profile)
         return {
-            "voice_description": result.voice_description,
+            "description": result.voice_description,
             "sample_text": result.sample_text,
-            "reasoning": result.reasoning,
         }

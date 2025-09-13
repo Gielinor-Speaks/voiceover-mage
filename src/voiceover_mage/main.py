@@ -11,6 +11,7 @@ from rich.table import Table
 
 from voiceover_mage.config import get_config
 from voiceover_mage.core.unified_pipeline import UnifiedPipelineService
+from voiceover_mage.persistence import DatabaseManager
 from voiceover_mage.utils.logging import (
     LoggingMode,
     configure_logging,
@@ -384,3 +385,70 @@ def main(
 
 if __name__ == "__main__":
     app()
+
+
+# --------------------------
+# Voice sample CLI utilities
+# --------------------------
+
+
+@app.command("list-voice-samples")
+def list_voice_samples(ctx: typer.Context, npc_id: int = typer.Argument(help="NPC ID to list samples for")):
+    """List all generated voice samples for an NPC."""
+    asyncio.run(_list_voice_samples_async(npc_id, ctx.obj["json_output"]))
+
+
+async def _list_voice_samples_async(npc_id: int, json_output: bool):
+    db = DatabaseManager()
+    await db.create_tables()
+    samples = await db.list_voice_samples(npc_id)
+
+    if not samples:
+        console.print(f"[yellow]No voice samples found for NPC ID {npc_id}.[/yellow]")
+        return
+
+    table = Table(title=f"🎵 Voice Samples for NPC {npc_id}")
+    table.add_column("ID", style="cyan")
+    table.add_column("Created", style="white")
+    table.add_column("Provider", style="magenta")
+    table.add_column("Generator", style="green")
+    table.add_column("Size (KB)", style="yellow")
+    table.add_column("Representative", style="blue")
+    table.add_column("Prompt (truncated)", style="white")
+
+    for s in samples:
+        size_kb = f"{(len(s.audio_bytes) / 1024):.1f}" if s.audio_bytes else "0.0"
+        prompt_short = (s.voice_prompt[:60] + "...") if len(s.voice_prompt) > 60 else s.voice_prompt
+        table.add_row(
+            str(s.id or "-"),
+            s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            s.provider,
+            s.generator,
+            size_kb,
+            "✅" if s.is_representative else "",
+            prompt_short,
+        )
+
+    console.print(table)
+
+
+@app.command("choose-voice-sample")
+def choose_voice_sample(
+    ctx: typer.Context,
+    npc_id: int = typer.Argument(help="NPC ID for which to set the representative sample"),
+    sample_id: int = typer.Argument(help="Sample ID to mark as representative"),
+):
+    """Choose a representative voice sample for an NPC."""
+    asyncio.run(_choose_voice_sample_async(npc_id, sample_id, ctx.obj["json_output"]))
+
+
+async def _choose_voice_sample_async(npc_id: int, sample_id: int, json_output: bool):
+    db = DatabaseManager()
+    await db.create_tables()
+    result = await db.set_representative_sample(npc_id, sample_id)
+    if not result:
+        console.print(f"[red]Could not find sample {sample_id} for NPC {npc_id}. Nothing changed.[/red]")
+        return
+    console.print(
+        f"[green]Sample {result.id} set as representative for NPC {npc_id} (provider: {result.provider}).[/green]"
+    )

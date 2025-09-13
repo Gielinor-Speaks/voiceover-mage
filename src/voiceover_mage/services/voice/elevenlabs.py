@@ -21,9 +21,8 @@ class ElevenLabsVoiceService:
         self,
         voice_description: str,
         sample_text: str,
-        **kwargs: Any,
-    ) -> tuple[bytes | None]:
-        """Generates a voice preview and returns the audio as bytes.
+    ) -> tuple[bytes, ...]:
+        """Generates voice previews and returns all decoded audio clips.
 
         Uses ElevenLabs SDK `text_to_voice.design` endpoint. If provided sample_text
         is shorter than API limits, auto-generates a matching text.
@@ -31,28 +30,36 @@ class ElevenLabsVoiceService:
         if not self.client:
             raise ConnectionError("ElevenLabs API key not configured")
         try:
+            # If provided text is short, let ElevenLabs auto-generate matching text
+            auto_generate = len(sample_text or "") < 100 or len(sample_text or "") > 1000
             resp = self.client.text_to_voice.design(
                 model_id="eleven_ttv_v3",
                 voice_description=voice_description,
-                text=sample_text,
+                text=sample_text if not auto_generate else None,
+                auto_generate_text=auto_generate,
             )
-            # Support both dict-like and object-like SDK responses
-            previews = getattr(resp, "previews", None) or (resp.get("previews") if isinstance(resp, dict) else None)
+
+            # Support both object-like and dict-like SDK responses without getattr
+            try:
+                previews = resp.previews  # type: ignore[attr-defined]
+            except Exception:
+                previews = resp["previews"] if isinstance(resp, dict) else None  # type: ignore[index]
             if not previews:
                 raise ValueError("No previews returned from ElevenLabs")
 
-            # Convert each base64 audio to bytes
-            audio_bytes = [
-                base64.b64decode(
-                    getattr(clip, "audio_base_64", None)
-                    or (clip.get("audio_base_64") if isinstance(clip, dict) else None)
-                )
-                for clip in previews
-            ]
+            # Convert all base64 audio previews to bytes
+            audio_list: list[bytes] = []
+            for clip in previews:
+                try:
+                    encoded = clip.audio_base_64  # type: ignore[attr-defined]
+                except Exception:
+                    encoded = clip.get("audio_base_64") if isinstance(clip, dict) else None  # type: ignore[call-overload]
+                if isinstance(encoded, str | bytes):
+                    audio_list.append(base64.b64decode(encoded))
 
-            if not audio_bytes:
+            if not audio_list:
                 raise ValueError("No valid audio clips found")
 
-            return tuple(audio_bytes)
+            return tuple(audio_list)
         except Exception as e:
             raise ConnectionError(f"Failed to generate voice preview: {e}") from e
