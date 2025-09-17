@@ -26,6 +26,7 @@ dev = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-httpx>=0.35.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.12.9",
 ]
 
@@ -37,6 +38,7 @@ build-backend = "uv_build"
 app = "voiceover_mage:main.app"
 
 [tool.pytest.ini_options]
+addopts = "-n auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
