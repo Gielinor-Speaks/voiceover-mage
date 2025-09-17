@@ -1,465 +1,134 @@
-# ABOUTME: Integration tests for the unified NPC extraction pipeline
-# ABOUTME: End-to-end testing of the complete pipeline from raw extraction to character profiles
+# ABOUTME: Integration tests for normalized UnifiedPipelineService
+# ABOUTME: Exercises the pipeline with in-memory persistence and patched providers
+
+from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import pytest_asyncio
 
-from voiceover_mage.core.models import ExtractionStage
 from voiceover_mage.core.unified_pipeline import UnifiedPipelineService
-from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCData
-
-
-class TestUnifiedPipelineService:
-    """Integration tests for the UnifiedPipelineService."""
-
-    @pytest.fixture
-    def mock_database(self):
-        """Create a mock database manager."""
-        db = Mock(spec=DatabaseManager)
-        db.create_tables = AsyncMock()
-        db.async_session = AsyncMock()
-        return db
-
-    @pytest.fixture
-    def mock_extraction_service(self):
-        """Create a mock NPCExtractionService."""
-        service = Mock()
-        service.extract_npc = AsyncMock()
-        service.close = AsyncMock()
-        return service
-
-    @pytest.fixture
-    def mock_intelligent_extractor(self):
-        """Create a mock NPCIntelligentExtractor."""
-        extractor = Mock()
-
-        # Mock sub-extractors
-        extractor.text_extractor = Mock()
-        extractor.image_extractor = Mock()
-        extractor.synthesizer = Mock()
-
-        return extractor
-
-    @pytest.fixture
-    def sample_raw_extraction(self):
-        """Create a sample raw extraction for testing."""
-        return NPCData(
-            id=1001,
-            npc_name="Integration Test NPC",
-            wiki_url="https://wiki.com/Integration_Test_NPC",
-            raw_markdown="""
-            # Integration Test NPC
-            
-            ![Test NPC](https://wiki.com/images/test_npc.png)
-            
-            **Integration Test NPC** is a character created for testing the pipeline.
-            They have a friendly personality and serve as a helpful guide.
-            
-            ## Dialogue
-            - "Welcome to the integration test!"
-            - "I'm here to help test the pipeline."
-            - "Everything seems to be working correctly!"
-            """,
-            chathead_image_url="https://wiki.com/images/test_npc_chathead.png",
-            image_url="https://wiki.com/images/test_npc.png",
-            extraction_success=True,
-            created_at=datetime.now(UTC),
-        )
-
-    @pytest.mark.asyncio
-    async def test_pipeline_initialization(self, mock_database):
-        """Test pipeline service initialization."""
-        pipeline = UnifiedPipelineService(database=mock_database, force_refresh=False, api_key="test-api-key")
-
-        assert pipeline.database == mock_database
-        assert pipeline.force_refresh is False
-        assert pipeline.api_key == "test-api-key"
-        assert pipeline.raw_service is not None
-        assert pipeline.intelligent_extractor is not None
-
-    @pytest.mark.asyncio
-    async def test_full_pipeline_without_api_key(self, mock_database, sample_raw_extraction):
-        """Test full pipeline execution without API key (skips Crawl4AI LLM extraction)."""
-        with (
-            patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class,
-            patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class,
-        ):
-            mock_service = Mock()
-            mock_service.extract_npc = AsyncMock(return_value=sample_raw_extraction)
-            mock_service.close = AsyncMock()
-            mock_service_class.return_value = mock_service
-
-            # Mock the intelligent extractor
-            mock_extractor = Mock()
-            mock_extractor.extract = AsyncMock(return_value=sample_raw_extraction)
-
-            # Create a mock NPCDetails for the aforward method
-            from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
-
-            mock_npc_details = Mock(spec=NPCDetails)
-            mock_npc_details.personality_traits = "Test personality"
-            mock_npc_details.occupation = "Test occupation"
-            mock_npc_details.social_role = "Test role"
-            mock_npc_details.dialogue_patterns = "Test dialogue"
-            mock_npc_details.emotional_range = "Test emotions"
-            mock_npc_details.background_lore = "Test lore"
-            mock_npc_details.age_category = "Test age"
-            mock_npc_details.build_type = "Test build"
-            mock_npc_details.attire_style = "Test attire"
-            mock_npc_details.distinctive_features = "Test features"
-            mock_npc_details.color_palette = "Test colors"
-            mock_npc_details.visual_archetype = "Test archetype"
-            mock_npc_details.chathead_image_url = "https://test.com/chathead.png"
-            mock_npc_details.image_url = "https://test.com/image.png"
-            mock_npc_details.text_confidence = 0.8
-            mock_npc_details.visual_confidence = 0.7
-            mock_npc_details.overall_confidence = 0.75
-
-            # Mock the aforward method that our new code uses
-            mock_extractor.aforward = AsyncMock(return_value=mock_npc_details)
-            mock_extractor_class.return_value = mock_extractor
-
-            # Create pipeline without API key
-            pipeline = UnifiedPipelineService(database=mock_database, force_refresh=False, api_key=None)
-
-            # Mock database operations - return the object that was passed in
-            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
-            mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-            result = await pipeline.run_full_pipeline(1001)
-
-            # Verify raw extraction completed
-            assert result.id == 1001
-            assert result.npc_name == "Integration Test NPC"
-            assert ExtractionStage.RAW.value in result.completed_stages
-
-            # Verify intelligent analysis stages completed (DSPy doesn't require API key)
-            assert ExtractionStage.TEXT.value in result.completed_stages
-            assert ExtractionStage.VISUAL.value in result.completed_stages
-            assert ExtractionStage.PROFILE.value in result.completed_stages
-            assert ExtractionStage.COMPLETE.value in result.completed_stages
-
-            mock_service.extract_npc.assert_called_once_with(1001)
-
-    @pytest.mark.asyncio
-    async def test_full_pipeline_with_api_key_success(self, mock_database, sample_raw_extraction):
-        """Test successful full pipeline execution with API key (all phases)."""
-        with (
-            patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class,
-            patch("voiceover_mage.core.unified_pipeline.Crawl4AINPCExtractor") as mock_crawl_class,
-            patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class,
-        ):
-            # Setup raw service mock
-            mock_service = Mock()
-            mock_service.extract_npc = AsyncMock(return_value=sample_raw_extraction)
-            mock_service.close = AsyncMock()
-            mock_service_class.return_value = mock_service
-
-            # Setup Crawl4AI mock
-            mock_crawl = Mock()
-            mock_wiki_data = Mock()
-            mock_wiki_data.name.value = "Integration Test NPC"
-            mock_wiki_data.model_dump.return_value = {"name": "Integration Test NPC"}
-            mock_crawl.extract_npc_data = AsyncMock(return_value=mock_wiki_data)
-            mock_crawl_class.return_value = mock_crawl
-
-            # Setup intelligent extractor mock
-            mock_extractor = Mock()
-            mock_extractor.text_extractor = Mock()
-            mock_extractor.image_extractor = Mock()
-            mock_extractor.synthesizer = Mock()
-
-            # Create a proper NPCDetails mock for the aforward method
-            from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
-
-            mock_npc_details = Mock(spec=NPCDetails)
-            mock_npc_details.personality_traits = "friendly and helpful guide"
-            mock_npc_details.occupation = "helpful guide"
-            mock_npc_details.social_role = "village guide"
-            mock_npc_details.dialogue_patterns = "friendly greetings and helpful directions"
-            mock_npc_details.emotional_range = "cheerful and welcoming"
-            mock_npc_details.background_lore = "local guide helping adventurers"
-            mock_npc_details.age_category = "young adult"
-            mock_npc_details.build_type = "average build"
-            mock_npc_details.attire_style = "simple traveler clothes"
-            mock_npc_details.distinctive_features = "warm smile"
-            mock_npc_details.color_palette = "earth tones"
-            mock_npc_details.visual_archetype = "helpful guide"
-            mock_npc_details.chathead_image_url = "https://test.com/chathead.png"
-            mock_npc_details.image_url = "https://test.com/image.png"
-            mock_npc_details.text_confidence = 0.8
-            mock_npc_details.visual_confidence = 0.9
-            mock_npc_details.overall_confidence = 0.85
-
-            # Mock the aforward method that our new code uses
-            mock_extractor.aforward = AsyncMock(return_value=mock_npc_details)
-            mock_extractor_class.return_value = mock_extractor
-
-            # Create pipeline with API key
-            pipeline = UnifiedPipelineService(database=mock_database, force_refresh=False, api_key="test-api-key")
-
-            # Mock intelligent extractor components
-            mock_text_result = Mock()
-            mock_text_result.model_dump.return_value = {"personality": "friendly, helpful"}
-
-            mock_visual_result = Mock()
-            mock_visual_result.model_dump.return_value = {"age_category": "young adult"}
-
-            mock_synthesis_result = Mock()
-            mock_synthesis_result.model_dump.return_value = {
-                "npc_name": "Integration Test NPC",
-                "personality_traits": "friendly and helpful guide",
-                "overall_confidence": 0.85,
-            }
-            mock_synthesis_result.personality_traits = "friendly and helpful guide"
-            mock_synthesis_result.occupation = "helpful guide"
-            mock_synthesis_result.overall_confidence = 0.85
-
-            # Properly mock the DSPy module methods
-            with (
-                patch.object(pipeline.intelligent_extractor, "text_extractor", return_value=mock_text_result),
-                patch.object(pipeline.intelligent_extractor, "image_extractor", return_value=mock_visual_result),
-                patch.object(pipeline.intelligent_extractor, "synthesizer", return_value=mock_synthesis_result),
-            ):
-                # Mock database operations - return the object that was passed in
-                mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
-                mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-                mock_database.async_session.return_value.__aenter__ = AsyncMock()
-                mock_database.async_session.return_value.__aexit__ = AsyncMock()
-                session_mock = Mock()
-
-                # Track extraction object through pipeline stages
-                current_extraction = sample_raw_extraction
-
-                def mock_merge(extraction):
-                    # Update the extraction object with new data
-                    current_extraction.raw_data = getattr(extraction, "raw_data", {})
-                    current_extraction.text_analysis = getattr(extraction, "text_analysis", {})
-                    current_extraction.visual_analysis = getattr(extraction, "visual_analysis", {})
-                    current_extraction.character_profile = getattr(extraction, "character_profile", {})
-                    current_extraction.completed_stages = getattr(extraction, "completed_stages", [])
-                    return current_extraction
-
-                session_mock.merge = AsyncMock(side_effect=mock_merge)
-                session_mock.commit = AsyncMock()
-                session_mock.refresh = AsyncMock()
-                mock_database.async_session.return_value.__aenter__.return_value = session_mock
-
-                result = await pipeline.run_full_pipeline(1001)
-
-                # Verify all phases completed
-                assert result.id == 1001
-                assert ExtractionStage.RAW.value in result.completed_stages
-                assert ExtractionStage.TEXT.value in result.completed_stages
-                assert ExtractionStage.VISUAL.value in result.completed_stages
-                assert ExtractionStage.SYNTHESIS.value in result.completed_stages
-                assert ExtractionStage.COMPLETE.value in result.completed_stages
-
-                # Verify analysis results are stored
-                assert result.text_analysis is not None
-                assert result.visual_analysis is not None
-                assert result.character_profile is not None
-
-                mock_service.extract_npc.assert_called_once_with(1001)
-                mock_crawl.extract_npc_data.assert_called_once_with(1001)
-
-    @pytest.mark.asyncio
-    async def test_pipeline_with_llm_extraction_failure(self, mock_database, sample_raw_extraction):
-        """Test pipeline handling LLM extraction failure gracefully."""
-        with (
-            patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class,
-            patch("voiceover_mage.core.unified_pipeline.Crawl4AINPCExtractor") as mock_crawl_class,
-            patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class,
-        ):
-            # Setup raw service mock
-            mock_service = Mock()
-            mock_service.extract_npc = AsyncMock(return_value=sample_raw_extraction)
-            mock_service.close = AsyncMock()
-            mock_service_class.return_value = mock_service
-
-            # Setup Crawl4AI to fail
-            mock_crawl = Mock()
-            mock_crawl.extract_npc_data = AsyncMock(side_effect=Exception("LLM extraction failed"))
-            mock_crawl_class.return_value = mock_crawl
-
-            # Setup intelligent extractor mock
-            mock_extractor = Mock()
-            mock_extractor.text_extractor = Mock()
-            mock_extractor.image_extractor = Mock()
-            mock_extractor.synthesizer = Mock()
-            mock_extractor_class.return_value = mock_extractor
-
-            pipeline = UnifiedPipelineService(database=mock_database, api_key="test-api-key")
-
-            # Mock database operations - return the object that was passed in
-            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
-            mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-            mock_database.async_session.return_value.__aenter__ = AsyncMock()
-            mock_database.async_session.return_value.__aexit__ = AsyncMock()
-            session_mock = Mock()
-            session_mock.merge = AsyncMock(return_value=sample_raw_extraction)
-            session_mock.commit = AsyncMock()
-            session_mock.refresh = AsyncMock()
-            mock_database.async_session.return_value.__aenter__.return_value = session_mock
-
-            # Pipeline should continue despite LLM failure
-            result = await pipeline.run_full_pipeline(1001)
-
-            # Should have completed raw extraction but not LLM stages
-            assert ExtractionStage.RAW.value in result.completed_stages
-            # Intelligent analysis might still run if raw markdown is available
-            # Pipeline should be resilient to individual stage failures
-
-    @pytest.mark.asyncio
-    async def test_pipeline_with_intelligent_analysis_failure(self, mock_database, sample_raw_extraction):
-        """Test pipeline handling intelligent analysis failure."""
-        with patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class:
-            with patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class:
-                # Setup raw service mock
-                mock_service = Mock()
-                mock_service.extract_npc = AsyncMock(return_value=sample_raw_extraction)
-                mock_service.close = AsyncMock()
-                mock_service_class.return_value = mock_service
-
-                # Setup intelligent extractor mock
-                mock_extractor = Mock()
-                mock_extractor.text_extractor = Mock()
-                mock_extractor.image_extractor = Mock()
-                mock_extractor.synthesizer = Mock()
-                mock_extractor_class.return_value = mock_extractor
-
-                pipeline = UnifiedPipelineService(
-                    database=mock_database,
-                    api_key=None,  # No LLM extraction, just intelligent analysis
-                )
-
-            # Mock intelligent extractor to fail
-            with patch.object(
-                pipeline.intelligent_extractor, "text_extractor", side_effect=Exception("Text analysis failed")
-            ):
-                # Mock database operations - return the object that was passed in
-                mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
-                mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-                # Pipeline should continue and complete what it can
-                result = await pipeline.run_full_pipeline(1001)
-
-                # Should have basic extraction even if analysis fails
-                assert result.id == 1001
-                assert ExtractionStage.RAW.value in result.completed_stages
-
-    @pytest.mark.asyncio
-    async def test_get_extraction_status(self, mock_database):
-        """Test getting extraction status."""
-        with patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class:
-            # Setup intelligent extractor mock
-            mock_extractor = Mock()
-            mock_extractor_class.return_value = mock_extractor
-
-            # Mock cached extraction
-            cached_extraction = NPCData(
-                id=1001,
-                npc_name="Status Test NPC",
-                wiki_url="https://wiki.com/Status_Test_NPC",
-                raw_markdown="# Status Test NPC\n\nMinimal test content.",
-                completed_stages=[ExtractionStage.RAW.value, ExtractionStage.TEXT.value],
-            )
-
-            mock_database.get_cached_extraction = AsyncMock(return_value=cached_extraction)
-
-            pipeline = UnifiedPipelineService(database=mock_database)
-
-        status = await pipeline.get_extraction_status(1001)
-
-        assert status["npc_id"] == 1001
-        assert status["exists"] is True
-        assert status["npc_name"] == "Status Test NPC"
-        assert ExtractionStage.RAW.value in status["completed_stages"]
-        assert ExtractionStage.TEXT.value in status["completed_stages"]
-        assert status["is_complete"] is False  # Not complete stage
-
-    @pytest.mark.asyncio
-    async def test_get_extraction_status_not_found(self, mock_database):
-        """Test getting status for non-existent extraction."""
-        with patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class:
-            # Setup intelligent extractor mock
-            mock_extractor = Mock()
-            mock_extractor_class.return_value = mock_extractor
-
-            mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-            pipeline = UnifiedPipelineService(database=mock_database)
-
-        status = await pipeline.get_extraction_status(9999)
-
-        assert status["npc_id"] == 9999
-        assert status["exists"] is False
-        assert status["completed_stages"] == []
-        assert status["has_character_profile"] is False
-
-    @pytest.mark.asyncio
-    async def test_pipeline_close(self, mock_database):
-        """Test pipeline cleanup."""
-        with patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class:
-            with patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class:
-                mock_service = Mock()
-                mock_service.close = AsyncMock()
-                mock_service_class.return_value = mock_service
-
-                # Setup intelligent extractor mock
-                mock_extractor = Mock()
-                mock_extractor_class.return_value = mock_extractor
-
-                pipeline = UnifiedPipelineService(database=mock_database)
-
-            await pipeline.close()
-
-            mock_service.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_pipeline_with_empty_markdown(self, mock_database):
-        """Test pipeline behavior with empty markdown content."""
-        empty_extraction = NPCData(
-            id=1002,
-            npc_name="Empty Test NPC",
-            wiki_url="https://wiki.com/Empty_Test_NPC",
-            raw_markdown="",  # Empty markdown
-            extraction_success=True,
-        )
-
-        with patch("voiceover_mage.core.unified_pipeline.NPCExtractionService") as mock_service_class:
-            with patch("voiceover_mage.core.unified_pipeline.NPCIntelligentExtractor") as mock_extractor_class:
-                mock_service = Mock()
-                mock_service.extract_npc = AsyncMock(return_value=empty_extraction)
-                mock_service.close = AsyncMock()
-                mock_service_class.return_value = mock_service
-
-                # Setup intelligent extractor mock
-                mock_extractor = Mock()
-                mock_extractor_class.return_value = mock_extractor
-
-                pipeline = UnifiedPipelineService(database=mock_database)
-
-            # Mock database operations - return the object that was passed in
-            mock_database.save_extraction = AsyncMock(side_effect=lambda x: x)
-            mock_database.get_cached_extraction = AsyncMock(return_value=None)
-
-            mock_database.async_session.return_value.__aenter__ = AsyncMock()
-            mock_database.async_session.return_value.__aexit__ = AsyncMock()
-            session_mock = Mock()
-            session_mock.merge = AsyncMock(return_value=empty_extraction)
-            session_mock.commit = AsyncMock()
-            session_mock.refresh = AsyncMock()
-            mock_database.async_session.return_value.__aenter__.return_value = session_mock
-
-            result = await pipeline.run_full_pipeline(1002)
-
-            # Should complete raw extraction but skip intelligent analysis
-            assert result.id == 1002
-            assert ExtractionStage.RAW.value in result.completed_stages
-            # Intelligent analysis should be skipped due to empty markdown
+from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+from voiceover_mage.persistence.manager import DatabaseManager, NPCPipelineState
+
+
+@pytest_asyncio.fixture
+async def temp_db() -> DatabaseManager:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import StaticPool
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+
+    db = DatabaseManager("sqlite+aiosqlite:///:memory:")
+    db.engine = engine
+    db.async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await db.create_tables()
+    yield db
+    await db.clear_cache()
+    await db.close()
+
+
+async def _seed_raw_state(db: DatabaseManager, npc_id: int) -> NPCPipelineState:
+    await db.ensure_npc(
+        npc_id=npc_id,
+        name="Hans",
+        variant=None,
+        wiki_url="https://oldschool.runescape.wiki/w/Hans",
+    )
+    await db.upsert_wiki_snapshot(
+        npc_id=npc_id,
+        raw_markdown="# Hans\nFaithful servant of Lumbridge Castle.",
+        chathead_image_url="https://example.com/hans_chat.png",
+        image_url="https://example.com/hans.png",
+        raw_data=None,
+        source_checksum="seed",
+        fetched_at=datetime.now(UTC),
+        extraction_success=True,
+        error_message=None,
+    )
+    state = await db.get_cached_extraction(npc_id)
+    assert state is not None
+    return state
+
+
+class _BinarySink:
+    def write(self, *_):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def _binary_open(*_args, **_kwargs):
+    return _BinarySink()
+
+
+@pytest.mark.asyncio
+async def test_run_full_pipeline_with_mocked_dependencies(temp_db: DatabaseManager):
+    pipeline = UnifiedPipelineService(database=temp_db, force_refresh=True, api_key=None)
+
+    async def fake_extract(npc_id: int) -> NPCPipelineState:
+        return await _seed_raw_state(temp_db, npc_id)
+
+    pipeline.raw_service.extract_npc = AsyncMock(side_effect=fake_extract)
+    pipeline.raw_service.close = AsyncMock()
+
+    details = NPCDetails(
+        npc_name="Hans",
+        personality_traits="loyal",
+        occupation="servant",
+        social_role="guide",
+        dialogue_patterns="polite",
+        emotional_range="warm",
+        background_lore="castle duties",
+        age_category="adult",
+        build_type="average",
+        attire_style="simple",
+        distinctive_features="bald",
+        color_palette="blue",
+        visual_archetype="citizen",
+        chathead_image_url="https://example.com/hans_chat.png",
+        image_url="https://example.com/hans.png",
+        text_confidence=0.8,
+        visual_confidence=0.7,
+        overall_confidence=0.75,
+        synthesis_notes="test",
+    )
+
+    pipeline.intelligent_extractor = Mock()
+    pipeline.intelligent_extractor.aforward = AsyncMock(return_value=details)
+
+    pipeline.voice_prompt_generator.aforward = AsyncMock(
+        return_value={"description": "warm voice", "sample_text": "Greetings adventurer."}
+    )
+    pipeline.voice_service.generate_preview_audio = AsyncMock(return_value=[b"audio-bytes"])
+
+    with (
+        patch("pathlib.Path.mkdir", return_value=None),
+        patch("builtins.open", _binary_open),
+    ):
+        state = await pipeline.run_full_pipeline(101)
+
+    assert state.id == 101
+    assert state.stage_flags["wiki_data"] is True
+    assert state.stage_flags["character_profile"] is True
+    assert state.stage_flags["voice_generation"] is True
+    assert state.stage_flags["voice_selection"] is False  # selection not set without explicit choice
+
+    previews = await temp_db.list_voice_previews(101)
+    assert len(previews) == 1
+    assert previews[0].voice_prompt == "warm voice"
+
+    stage_map = await temp_db.compute_stage_map(101)
+    assert stage_map["wiki_data"] and stage_map["character_profile"]
+    assert stage_map["complete"] is False

@@ -1,185 +1,89 @@
-# ABOUTME: Tests for NPC persistence models
-# ABOUTME: Validates SQLModel definitions and field constraints
+# ABOUTME: Model-level tests for normalized NPC persistence schema
+# ABOUTME: Ensures SQLModel definitions expose expected defaults and relationships
+
+from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from voiceover_mage.persistence.models import NPCData
+from voiceover_mage.persistence.models import AudioTranscript, CharacterProfile, NPC, VoicePreview, WikiSnapshot
 
 
-class TestNPCDataValidation:
-    """Test NPCData model validation and constraints."""
+def test_npc_defaults():
+    npc = NPC(id=1, name="Hans", variant=None, wiki_url="https://oldschool.runescape.wiki/w/Hans")
 
-    def test_minimal_required_fields(self):
-        """Test creation with only required fields."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://oldschool.runescape.wiki/w/Hans",
-            raw_markdown="# Hans\nContent here",
-        )
+    assert npc.id == 1
+    assert npc.name == "Hans"
+    assert npc.selected_preview_id is None
+    assert npc.created_at.tzinfo is UTC
+    assert npc.updated_at.tzinfo is UTC
 
-        assert extraction.id == 1
-        assert extraction.npc_name == "Hans"
-        assert extraction.wiki_url == "https://oldschool.runescape.wiki/w/Hans"
-        assert extraction.raw_markdown == "# Hans\nContent here"
-        assert extraction.extraction_success is True  # Default value
-        assert extraction.chathead_image_url is None
-        assert extraction.image_url is None
-        assert extraction.error_message is None
 
-    def test_all_fields(self):
-        """Test creation with all fields."""
-        now = datetime.now(UTC)
-        extraction = NPCData(
-            id=2,
-            npc_name="Wise Old Man",
-            wiki_url="https://oldschool.runescape.wiki/w/Wise_Old_Man",
-            raw_markdown="# Wise Old Man\nA powerful wizard...",
-            chathead_image_url="https://example.com/wom_chathead.png",
-            image_url="https://example.com/wom.png",
-            created_at=now,
-            extraction_success=True,
-            error_message=None,
-        )
+def test_wiki_snapshot_fields():
+    now = datetime.now(UTC)
+    snapshot = WikiSnapshot(
+        npc_id=1,
+        raw_markdown="# Hans\nNPC description",
+        chathead_image_url="https://example.com/chat.png",
+        image_url="https://example.com/full.png",
+        raw_data_json=None,
+        source_checksum="abc123",
+        fetched_at=now,
+        extraction_success=True,
+        error_message=None,
+    )
 
-        assert extraction.id == 2
-        assert extraction.npc_name == "Wise Old Man"
-        assert extraction.created_at == now
-        assert extraction.extraction_success is True
+    assert snapshot.npc_id == 1
+    assert snapshot.raw_markdown.startswith("# Hans")
+    assert snapshot.source_checksum == "abc123"
+    assert snapshot.fetched_at == now
+    assert snapshot.extraction_success is True
 
-    def test_error_state(self):
-        """Test extraction in error state."""
-        extraction = NPCData(
-            id=404,
-            npc_name="Missing NPC",
-            wiki_url="https://oldschool.runescape.wiki/w/Missing",
-            raw_markdown="",  # Empty markdown for failed extraction
-            extraction_success=False,
-            error_message="HTTP 404: Page not found",
-        )
 
-        assert extraction.extraction_success is False
-        assert extraction.error_message == "HTTP 404: Page not found"
-        assert extraction.raw_markdown == ""
+def test_character_profile_optional_json():
+    profile = CharacterProfile(
+        npc_id=1,
+        profile_json=None,
+        text_analysis_json=None,
+        visual_analysis_json=None,
+        pipeline_version="v0",
+        updated_at=datetime.now(UTC),
+    )
 
-    def test_large_markdown_content(self):
-        """Test handling of large markdown content."""
-        # Create a large markdown string (simulating a full wiki page)
-        large_content = "# NPC Name\n\n"
-        large_content += "## Description\n" + ("Lorem ipsum dolor sit amet. " * 100) + "\n\n"
-        large_content += "## Dialogue\n" + ("'Hello there!' " * 50) + "\n\n"
-        large_content += "## Trivia\n" + ("Interesting fact. " * 200)
+    assert profile.npc_id == 1
+    assert profile.profile_json is None
+    assert profile.pipeline_version == "v0"
 
-        extraction = NPCData(
-            id=1,
-            npc_name="Verbose NPC",
-            wiki_url="https://example.com",
-            raw_markdown=large_content,
-        )
 
-        assert len(extraction.raw_markdown) > 5000
-        assert extraction.raw_markdown == large_content
+def test_voice_preview_storage():
+    preview = VoicePreview(
+        npc_id=1,
+        voice_prompt="warm and friendly",
+        sample_text="Hello adventurer!",
+        provider="elevenlabs",
+        model="eleven_ttv_v3",
+        generation_metadata={"attempt": 1},
+        audio_path="/tmp/sample.mp3",
+        audio_bytes=b"123",
+        is_representative=False,
+        created_at=datetime.now(UTC),
+    )
 
-    def test_empty_optional_fields(self):
-        """Test that optional fields can be None."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Simple NPC",
-            wiki_url="https://example.com",
-            raw_markdown="Content",
-            chathead_image_url=None,
-            image_url=None,
-            error_message=None,
-        )
+    assert preview.npc_id == 1
+    assert preview.audio_path == "/tmp/sample.mp3"
+    assert preview.is_representative is False
+    assert preview.generation_metadata["attempt"] == 1
 
-        assert extraction.chathead_image_url is None
-        assert extraction.image_url is None
-        assert extraction.error_message is None
 
-    def test_special_characters_in_strings(self):
-        """Test handling of special characters in string fields."""
-        extraction = NPCData(
-            id=1,
-            npc_name="TzHaar-Ket-Rak",  # Special characters in name
-            wiki_url="https://oldschool.runescape.wiki/w/TzHaar-Ket-Rak",
-            raw_markdown="# TzHaar-Ket-Rak\n\n*Italic* **Bold** `Code` [Link](url)",
-            error_message="Connection failed: ñ€øŧ føüñđ",  # Unicode in error
-        )
+def test_audio_transcript_metadata():
+    transcript = AudioTranscript(
+        npc_id=1,
+        preview_id=2,
+        provider="whisper",
+        text="Hello adventurer!",
+        metadata_json={"language": "en"},
+        created_at=datetime.now(UTC),
+    )
 
-        assert extraction.npc_name == "TzHaar-Ket-Rak"
-        assert "*Italic*" in extraction.raw_markdown
-        assert extraction.error_message is not None
-        assert "ñ€øŧ føüñđ" in extraction.error_message
-
-    def test_url_validation(self):
-        """Test URL field handling."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Test",
-            wiki_url="https://oldschool.runescape.wiki/w/Test_(npc)",  # Parentheses in URL
-            raw_markdown="Content",
-            chathead_image_url="https://cdn.wiki.com/images/Test_chathead.png?v=12345",  # Query params
-            image_url="https://cdn.wiki.com/images/Test.png#anchor",  # Fragment
-        )
-
-        assert "(npc)" in extraction.wiki_url
-        assert extraction.chathead_image_url is not None
-        assert "?v=12345" in extraction.chathead_image_url
-        assert extraction.image_url is not None
-        assert "#anchor" in extraction.image_url
-
-    def test_model_dict_export(self):
-        """Test exporting model to dictionary."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="Content",
-        )
-
-        data = extraction.model_dump()
-
-        assert data["id"] == 1
-        assert data["npc_name"] == "Hans"
-        assert data["wiki_url"] == "https://example.com"
-        assert data["raw_markdown"] == "Content"
-        assert "extraction_success" in data
-        assert "chathead_image_url" in data
-
-    def test_model_json_export(self):
-        """Test exporting model to JSON string."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="Content",
-        )
-
-        json_str = extraction.model_dump_json()
-
-        assert '"id":1' in json_str or '"id": 1' in json_str
-        assert '"npc_name":"Hans"' in json_str or '"npc_name": "Hans"' in json_str
-
-    def test_model_copy_with_update(self):
-        """Test creating a copy with updates."""
-        original = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="Original content",
-        )
-
-        updated = original.model_copy(
-            update={
-                "raw_markdown": "Updated content",
-                "extraction_success": False,
-                "error_message": "Test error",
-            }
-        )
-
-        assert updated.id == original.id
-        assert updated.npc_name == original.npc_name
-        assert updated.raw_markdown == "Updated content"
-        assert updated.extraction_success is False
-        assert updated.error_message == "Test error"
-        assert original.raw_markdown == "Original content"  # Original unchanged
+    assert transcript.npc_id == 1
+    assert transcript.preview_id == 2
+    assert transcript.metadata_json["language"] == "en"

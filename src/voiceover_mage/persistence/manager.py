@@ -415,7 +415,7 @@ class DatabaseManager:
                 .order_by(VoicePreview.created_at.desc())
             )
             result = await session.exec(statement)
-            return list(result.all())
+            return list(result.scalars().all())
 
     async def save_audio_transcript(
         self,
@@ -455,12 +455,12 @@ class DatabaseManager:
                 .where(VoicePreview.npc_id == npc_id)
                 .order_by(VoicePreview.created_at.desc())
             )
-            previews = list(previews_result.all())
+            previews = list(previews_result.scalars().all())
 
             transcripts_result = await session.exec(
                 select(AudioTranscript).where(AudioTranscript.npc_id == npc_id)
             )
-            transcripts = list(transcripts_result.all())
+            transcripts = list(transcripts_result.scalars().all())
 
             return NPCPipelineState(
                 npc=npc,

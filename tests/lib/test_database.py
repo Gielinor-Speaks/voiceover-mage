@@ -1,21 +1,23 @@
-# ABOUTME: Tests for database manager and async SQLite operations
-# ABOUTME: Validates caching, persistence, and error handling for NPC extractions
+# ABOUTME: Tests for normalized DatabaseManager and NPC pipeline state aggregation
+# ABOUTME: Validates upsert helpers, derived stages, and artifact persistence
 
-import asyncio
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.pool import StaticPool
 
-from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCData
+from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
+from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
+from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
+from voiceover_mage.persistence.manager import DatabaseManager, NPCPipelineState
 
 
 @pytest_asyncio.fixture
-async def temp_db():
-    """Create a temporary in-memory database for testing."""
-    # Use in-memory database with StaticPool for testing
+async def temp_db() -> DatabaseManager:
+    """Provide an in-memory database manager for async tests."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -27,236 +29,269 @@ async def temp_db():
 
     db = DatabaseManager("sqlite+aiosqlite:///:memory:")
     db.engine = engine
-    db.async_session = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
+    db.async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     await db.create_tables()
-
     yield db
-
     await db.close()
 
 
-@pytest.fixture
-def sample_extraction():
-    """Create a sample NPCData for testing."""
-    return NPCData(
-        id=1,
-        npc_name="Hans",
+async def _bootstrap_npc(db: DatabaseManager, npc_id: int = 1) -> NPCPipelineState:
+    """Create a minimal NPC identity and snapshot for derived-stage tests."""
+    await db.ensure_npc(
+        npc_id=npc_id,
+        name="Hans",
+        variant=None,
         wiki_url="https://oldschool.runescape.wiki/w/Hans",
-        raw_markdown="# Hans\n\nHans is the servant of Duke Horacio...",
-        chathead_image_url="https://example.com/hans_chathead.png",
+    )
+    await db.upsert_wiki_snapshot(
+        npc_id=npc_id,
+        raw_markdown="# Hans\nThe loyal servant of Duke Horacio.",
+        chathead_image_url="https://example.com/hans_chat.png",
         image_url="https://example.com/hans.png",
+        raw_data=None,
+        source_checksum="abc123",
+        fetched_at=datetime.now(UTC),
         extraction_success=True,
+        error_message=None,
+    )
+    state = await db.get_cached_extraction(npc_id)
+    assert state is not None
+    return state
+
+
+@pytest.mark.asyncio
+async def test_ensure_npc_creates_identity(temp_db: DatabaseManager):
+    npc = await temp_db.ensure_npc(
+        npc_id=7,
+        name="Bob",
+        variant="Lumbridge",
+        wiki_url="https://oldschool.runescape.wiki/w/Bob",
     )
 
+    assert npc.id == 7
+    assert npc.name == "Bob"
+    assert npc.variant == "Lumbridge"
 
-class TestDatabaseManager:
-    """Test database manager functionality."""
-
-    @pytest.mark.asyncio
-    async def test_create_tables(self, temp_db: DatabaseManager):
-        """Test that tables are created successfully."""
-        # Tables should be created by fixture
-        # Try to query to verify table exists
-        result = await temp_db.get_cached_extraction(999)
-        assert result is None  # No data yet, but query should work
-
-    @pytest.mark.asyncio
-    async def test_save_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCData):
-        """Test saving an extraction to the database."""
-        saved = await temp_db.save_extraction(sample_extraction)
-
-        assert saved.id is not None
-        assert saved.id == sample_extraction.id
-        assert saved.npc_name == sample_extraction.npc_name
-        assert saved.created_at is not None
-
-    @pytest.mark.asyncio
-    async def test_get_cached_extraction(self, temp_db: DatabaseManager, sample_extraction: NPCData):
-        """Test retrieving a cached extraction."""
-        # Save first
-        await temp_db.save_extraction(sample_extraction)
-
-        # Retrieve
-        cached = await temp_db.get_cached_extraction(sample_extraction.id)
-
-        assert cached is not None
-        assert cached.id == sample_extraction.id
-        assert cached.npc_name == sample_extraction.npc_name
-        assert cached.raw_markdown == sample_extraction.raw_markdown
-
-    @pytest.mark.asyncio
-    async def test_cache_miss(self, temp_db: DatabaseManager):
-        """Test cache miss returns None."""
-        result = await temp_db.get_cached_extraction(999)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_duplicate_npc_id_handling(self, temp_db: DatabaseManager, sample_extraction: NPCData):
-        """Test handling of duplicate npc_id entries."""
-        # Save first extraction
-        first = await temp_db.save_extraction(sample_extraction)
-
-        # Try to save another extraction with same npc_id
-        sample_extraction.raw_markdown = "Updated content"
-        await temp_db.save_extraction(sample_extraction)
-
-        # Should update existing or create new based on implementation
-        # For caching, we want to keep the first one
-        cached = await temp_db.get_cached_extraction(sample_extraction.id)
-        assert cached is not None
-        assert cached.id == first.id  # Should return the first one
-
-    @pytest.mark.asyncio
-    async def test_error_extraction_persistence(self, temp_db: DatabaseManager):
-        """Test saving extraction with error."""
-        error_extraction = NPCData(
-            id=404,
-            npc_name="Unknown",
-            wiki_url="https://oldschool.runescape.wiki/w/Unknown",
-            raw_markdown="",
-            extraction_success=False,
-            error_message="Page not found",
-        )
-
-        saved = await temp_db.save_extraction(error_extraction)
-        assert saved.extraction_success is False
-        assert saved.error_message == "Page not found"
-
-        # Should still be retrievable from cache
-        cached = await temp_db.get_cached_extraction(404)
-        assert cached is not None
-        assert cached.extraction_success is False
-
-    @pytest.mark.asyncio
-    async def test_large_markdown_storage(self, temp_db: DatabaseManager):
-        """Test storing large markdown content."""
-        large_markdown = "# Test\n" + ("Lorem ipsum " * 1000)
-
-        extraction = NPCData(
-            id=2,
-            npc_name="Test NPC",
-            wiki_url="https://example.com",
-            raw_markdown=large_markdown,
-            extraction_success=True,
-        )
-
-        await temp_db.save_extraction(extraction)
-        cached = await temp_db.get_cached_extraction(2)
-
-        assert cached is not None
-        assert cached.raw_markdown == large_markdown
-
-    @pytest.mark.asyncio
-    async def test_clear_cache(self, temp_db: DatabaseManager, sample_extraction: NPCData):
-        """Test clearing the cache."""
-        # Save some data
-        await temp_db.save_extraction(sample_extraction)
-
-        # Clear cache
-        await temp_db.clear_cache()
-
-        # Should be empty now
-        cached = await temp_db.get_cached_extraction(sample_extraction.id)
-        assert cached is None
-
-    @pytest.mark.asyncio
-    async def test_concurrent_operations(self, temp_db: DatabaseManager):
-        """Test concurrent database operations."""
-        extractions = [
-            NPCData(
-                id=i,
-                npc_name=f"NPC {i}",
-                wiki_url=f"https://example.com/{i}",
-                raw_markdown=f"Content for NPC {i}",
-                extraction_success=True,
-            )
-            for i in range(10)
-        ]
-
-        # Save all concurrently
-        tasks = [temp_db.save_extraction(e) for e in extractions]
-        results = await asyncio.gather(*tasks)
-
-        assert len(results) == 10
-        assert all(r.id is not None for r in results)
-
-        # Retrieve all concurrently
-        tasks = [temp_db.get_cached_extraction(i) for i in range(10)]
-        cached = await asyncio.gather(*tasks)
-
-        assert len(cached) == 10
-        assert all(c is not None for c in cached)
+    state = await temp_db.get_cached_extraction(7)
+    assert state is not None
+    assert state.npc_name == "Bob"
+    assert state.stage_flags["wiki_data"] is False
 
 
-class TestNPCData:
-    """Test the NPCData model."""
+@pytest.mark.asyncio
+async def test_wiki_snapshot_round_trip(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db, npc_id=42)
 
-    def test_model_creation(self):
-        """Test creating an NPCData model."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="# Hans",
-            extraction_success=True,
-        )
+    assert state.raw_markdown.startswith("# Hans")
+    assert state.chathead_image_url.endswith("hans_chat.png")
+    assert state.stage_flags["wiki_data"] is True
+    assert state.completed_stages == ["wiki_data"]
 
-        assert extraction.id == 1
-        assert extraction.npc_name == "Hans"
-        assert extraction.chathead_image_url is None
-        assert extraction.image_url is None
-        assert extraction.error_message is None
 
-    def test_model_with_images(self):
-        """Test model with image URLs."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="# Hans",
-            chathead_image_url="https://example.com/chathead.png",
-            image_url="https://example.com/image.png",
-            extraction_success=True,
-        )
+@pytest.mark.asyncio
+async def test_character_profile_upsert(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db)
 
-        assert extraction.chathead_image_url == "https://example.com/chathead.png"
-        assert extraction.image_url == "https://example.com/image.png"
+    profile = NPCDetails(
+        npc_name=state.npc_name,
+        personality_traits="loyal, dutiful",
+        occupation="Castle servant",
+        social_role="Guide",
+        dialogue_patterns="Polite responses",
+        emotional_range="Friendly",
+        background_lore="Lives in Lumbridge",
+        age_category="Adult",
+        build_type="Average",
+        attire_style="Simple garb",
+        distinctive_features="Bald head",
+        color_palette="Blue and white",
+        visual_archetype="Helpful citizen",
+        chathead_image_url=state.chathead_image_url,
+        image_url=state.image_url,
+        overall_confidence=0.8,
+        text_confidence=0.75,
+        visual_confidence=0.7,
+        synthesis_notes="Baseline profile",
+    )
 
-    def test_model_with_error(self):
-        """Test model with error state."""
-        extraction = NPCData(
-            id=1,
-            npc_name="Unknown",
-            wiki_url="https://example.com",
-            raw_markdown="",
-            extraction_success=False,
-            error_message="Failed to extract",
-        )
+    text = NPCTextCharacteristics(
+        personality_traits="Helpful",
+        occupation="Servant",
+        social_role="Guide",
+        dialogue_patterns="Polite",
+        emotional_range="Warm",
+        background_lore="Castle duties",
+        confidence_score=0.7,
+        reasoning="Markdown summary",
+    )
 
-        assert extraction.extraction_success is False
-        assert extraction.error_message == "Failed to extract"
+    visual = NPCVisualCharacteristics(
+        chathead_image_url=state.chathead_image_url,
+        image_url=state.image_url,
+        age_category="Adult",
+        build_type="Average",
+        attire_style="Blue tunic",
+        distinctive_features="Bald",
+        color_palette="Blue",
+        visual_archetype="Servant",
+        confidence_score=0.6,
+        reasoning="Image tags",
+    )
 
-    def test_datetime_default(self):
-        """Test that created_at has a proper default."""
-        before = datetime.now(UTC)
-        extraction = NPCData(
-            id=1,
-            npc_name="Hans",
-            wiki_url="https://example.com",
-            raw_markdown="# Hans",
-            extraction_success=True,
-        )
-        after = datetime.now(UTC)
+    await temp_db.upsert_character_profile(
+        npc_id=state.id,
+        profile=profile,
+        text_analysis=text,
+        visual_analysis=visual,
+        pipeline_version="test-1",
+    )
 
-        # The created_at should be set automatically with a default factory
-        assert extraction.created_at is not None
-        assert isinstance(extraction.created_at, datetime)
-        # Should be between before and after creation
-        assert before <= extraction.created_at <= after
-        # Should be timezone-aware (UTC)
-        assert extraction.created_at.tzinfo is not None
+    refreshed = await temp_db.get_cached_extraction(state.id)
+    assert refreshed is not None
+    assert refreshed.character_profile is not None
+    assert refreshed.character_profile.personality_traits == "loyal, dutiful"
+    assert refreshed.text_analysis is not None
+    assert refreshed.visual_analysis is not None
+    assert refreshed.stage_flags["character_profile"] is True
+
+
+@pytest.mark.asyncio
+async def test_voice_preview_selection(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db, npc_id=99)
+
+    first = await temp_db.create_voice_preview(
+        npc_id=state.id,
+        voice_prompt="calm and friendly",
+        sample_text="Hello adventurer!",
+        provider="elevenlabs",
+        model="eleven_ttv_v3",
+        generation_metadata={"index": 1},
+        audio_path="/tmp/99_preview_1.mp3",
+        is_representative=False,
+    )
+    second = await temp_db.create_voice_preview(
+        npc_id=state.id,
+        voice_prompt="excited",
+        sample_text="The duke is waiting!",
+        provider="elevenlabs",
+        model="eleven_ttv_v3",
+        generation_metadata={"index": 2},
+        audio_path="/tmp/99_preview_2.mp3",
+        is_representative=True,
+    )
+
+    assert first.is_representative is False
+    assert second.is_representative is True
+
+    selected = await temp_db.set_selected_voice_preview(state.id, first.id)
+    assert selected is not None
+    assert selected.is_representative is True
+
+    refreshed = await temp_db.get_cached_extraction(state.id)
+    assert refreshed is not None
+    assert refreshed.selected_preview_id == first.id
+    assert refreshed.stage_flags["voice_generation"] is True
+    assert refreshed.stage_flags["voice_selection"] is True
+
+
+@pytest.mark.asyncio
+async def test_audio_transcript_storage(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db, npc_id=5)
+    preview = await temp_db.create_voice_preview(
+        npc_id=state.id,
+        voice_prompt="formal",
+        sample_text="Greetings, traveler.",
+        provider="elevenlabs",
+        model="eleven_ttv_v3",
+        generation_metadata={},
+        is_representative=True,
+    )
+
+    await temp_db.set_selected_voice_preview(state.id, preview.id)
+
+    transcript = await temp_db.save_audio_transcript(
+        npc_id=state.id,
+        preview_id=preview.id,
+        provider="whisper",
+        text="Greetings, traveler.",
+        metadata={"language": "en"},
+    )
+
+    assert transcript.preview_id == preview.id
+
+    refreshed = await temp_db.get_cached_extraction(state.id)
+    assert refreshed is not None
+    assert refreshed.stage_flags["transcription"] is True
+    assert refreshed.completed_stages[-1] in {"transcription", "complete"}
+
+
+@pytest.mark.asyncio
+async def test_stage_map_completion(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db, npc_id=12)
+
+    profile = NPCDetails(
+        npc_name=state.npc_name,
+        personality_traits="calm",
+        occupation="guide",
+        social_role="helper",
+        dialogue_patterns="gentle",
+        emotional_range="warm",
+        background_lore="Lumbridge",
+        age_category="adult",
+        build_type="average",
+        attire_style="simple",
+        distinctive_features="bald",
+        color_palette="blue",
+        visual_archetype="citizen",
+        chathead_image_url=state.chathead_image_url,
+        image_url=state.image_url,
+        text_confidence=0.7,
+        visual_confidence=0.6,
+        overall_confidence=0.65,
+        synthesis_notes="baseline",
+    )
+
+    await temp_db.upsert_character_profile(
+        npc_id=state.id,
+        profile=profile,
+        text_analysis=None,
+        visual_analysis=None,
+        pipeline_version="v0",
+    )
+
+    preview = await temp_db.create_voice_preview(
+        npc_id=state.id,
+        voice_prompt="warm",
+        sample_text="Hello!",
+        provider="elevenlabs",
+        model="eleven_ttv_v3",
+        generation_metadata={},
+        is_representative=True,
+    )
+
+    await temp_db.save_audio_transcript(
+        npc_id=state.id,
+        preview_id=preview.id,
+        provider="whisper",
+        text="Hello!",
+        metadata={},
+    )
+
+    stage_map = await temp_db.compute_stage_map(state.id)
+    assert stage_map["wiki_data"] is True
+    assert stage_map["character_profile"] is True
+    assert stage_map["voice_generation"] is True
+    assert stage_map["voice_selection"] is True
+    assert stage_map["transcription"] is True
+    assert stage_map["complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_clear_cache(temp_db: DatabaseManager):
+    state = await _bootstrap_npc(temp_db, npc_id=33)
+    assert state is not None
+
+    await temp_db.clear_cache()
+
+    cached = await temp_db.get_cached_extraction(33)
+    assert cached is None
