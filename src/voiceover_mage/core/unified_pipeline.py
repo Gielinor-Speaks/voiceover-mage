@@ -1,10 +1,12 @@
 # ABOUTME: Unified pipeline service that coordinates all extraction stages
 # ABOUTME: Manages database persistence and stage progression for NPC processing
 
+import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from voiceover_mage.core.models import ExtractionStage, NPCProfile, NPCWikiSourcedData
+from voiceover_mage.core.models import NPCProfile, NPCWikiSourcedData
 from voiceover_mage.core.service import NPCExtractionService
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.intelligent import NPCIntelligentExtractor
@@ -12,8 +14,8 @@ from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.extraction.voice.elevenlabs import ElevenLabsVoicePromptGenerator
 from voiceover_mage.extraction.wiki.crawl4ai import Crawl4AINPCExtractor
+from voiceover_mage.persistence import NPCPipelineState
 from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import NPCData
 from voiceover_mage.services.voice.elevenlabs import ElevenLabsVoiceService
 from voiceover_mage.utils.logging import get_logger
 from voiceover_mage.utils.retry import LLMAPIError, llm_retry
@@ -54,8 +56,9 @@ class UnifiedPipelineService:
         # Initialize voice services
         self.voice_prompt_generator = ElevenLabsVoicePromptGenerator()
         self.voice_service = ElevenLabsVoiceService()
+        self.pipeline_version = "1"
 
-    async def run_full_pipeline(self, npc_id: int) -> NPCData:
+    async def run_full_pipeline(self, npc_id: int) -> NPCPipelineState:
         """Run the complete extraction pipeline for an NPC.
 
         Args:
@@ -70,22 +73,22 @@ class UnifiedPipelineService:
         await self.database.create_tables()
 
         # Stage 1: Raw extraction (basic markdown + images)
-        extraction = await self._run_raw_extraction(npc_id)
+        state = await self._run_raw_extraction(npc_id)
 
         # Stage 2: LLM-based extraction using Crawl4AI
         if self.api_key:
-            extraction = await self._run_llm_extraction(extraction)
+            state = await self._run_llm_extraction(state)
 
         # Stage 3: Intelligent analysis (text + visual) - only if we have raw markdown
         self.logger.info(
             "Checking intelligent analysis prerequisites",
             npc_id=npc_id,
-            has_markdown=bool(extraction.raw_markdown),
-            markdown_length=len(extraction.raw_markdown) if extraction.raw_markdown else 0,
+            has_markdown=bool(state.raw_markdown),
+            markdown_length=len(state.raw_markdown) if state.raw_markdown else 0,
         )
-        if extraction.raw_markdown:
+        if state.raw_markdown:
             self.logger.info("Starting intelligent analysis stage", npc_id=npc_id)
-            extraction = await self._run_intelligent_analysis(extraction)
+            state = await self._run_intelligent_analysis(state)
         else:
             self.logger.warning("Skipping intelligent analysis - no markdown content", npc_id=npc_id)
 
@@ -94,7 +97,7 @@ class UnifiedPipelineService:
 
         # Stage 5: Voice generation (preview sample)
         try:
-            extraction = await self._run_voice_generation(extraction)
+            state = await self._run_voice_generation(state)
         except Exception as e:
             self.logger.error(
                 "Voice generation stage failed",
@@ -106,11 +109,12 @@ class UnifiedPipelineService:
         self.logger.info(
             "Pipeline completed",
             npc_id=npc_id,
-            npc_name=extraction.npc_name,
-            completed_stages=extraction.completed_stages,
+            npc_name=state.npc_name,
+            completed_stages=state.completed_stages,
+            stage_flags=state.stage_flags,
         )
 
-        return extraction
+        return state
 
     def _map_details_to_profile(self, npc_id: int, npc_name: str, details: NPCDetails) -> NPCProfile:
         """Map synthesized NPCDetails to NPCProfile for voice generation."""
@@ -140,19 +144,19 @@ class UnifiedPipelineService:
             generation_notes=generation_notes,
         )
 
-    async def _run_voice_generation(self, extraction: NPCData) -> NPCData:
+    async def _run_voice_generation(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage: Generate a preview voice sample and persist metadata."""
-        if not extraction.character_profile:
-            self.logger.info("Skipping voice generation - no character profile", npc_id=extraction.id)
-            return extraction
+        if not state.character_profile:
+            self.logger.info("Skipping voice generation - no character profile", npc_id=state.id)
+            return state
 
-        details = extraction.character_profile
-        profile = self._map_details_to_profile(extraction.id, extraction.npc_name, details)
+        details = state.character_profile
+        profile = self._map_details_to_profile(state.id, state.npc_name, details)
 
         # Generate descriptive prompt
         voice_description = await self.voice_prompt_generator.aforward(profile)
 
-        self.logger.info("Generated voice prompt", npc_id=extraction.id, voice_description=voice_description)
+        self.logger.info("Generated voice prompt", npc_id=state.id, voice_description=voice_description)
 
         # Call provider and save audio clips
         audio_clips = await self.voice_service.generate_preview_audio(
@@ -165,23 +169,24 @@ class UnifiedPipelineService:
 
         last_out_path: Path | None = None
         for i, audio in enumerate(audio_clips):
-            out_path = out_dir / f"{extraction.id}_preview_{i + 1}.mp3"
+            out_path = out_dir / f"{state.id}_preview_{i + 1}.mp3"
             with open(out_path, "wb") as f:
                 f.write(audio)
-            self.logger.info("Saved voice preview", npc_id=extraction.id, sample_path=str(out_path))
+            self.logger.info("Saved voice preview", npc_id=state.id, sample_path=str(out_path))
             last_out_path = out_path
 
             # Persist to database as a voice sample
             try:
-                await self.database.save_voice_sample(
-                    npc_id=extraction.id,
+                await self.database.create_voice_preview(
+                    npc_id=state.id,
                     voice_prompt=voice_description.get("description", ""),
                     sample_text=voice_description.get("sample_text", ""),
-                    audio_bytes=audio,
                     provider="elevenlabs",
-                    generator="text_to_voice.design:eleven_ttv_v3",
+                    model="text_to_voice.design:eleven_ttv_v3",
+                    audio_path=str(out_path),
+                    audio_bytes=audio,
                     is_representative=False,
-                    provider_metadata={
+                    generation_metadata={
                         "model_id": "eleven_ttv_v3",
                         "preview_index": i + 1,
                         "total_previews": len(audio_clips),
@@ -190,75 +195,95 @@ class UnifiedPipelineService:
             except Exception as e:
                 self.logger.error(
                     "Failed to persist voice sample",
-                    npc_id=extraction.id,
+                    npc_id=state.id,
                     error=str(e),
                     error_type=type(e).__name__,
                     sample_index=i + 1,
                 )
         # Mark voice generation stage complete
-        extraction.add_stage(ExtractionStage.VOICE_GENERATION)
-        extraction = await self._save_extraction(extraction)
-        # Log summary
-        self.logger.info(
-            "Voice generation complete",
-            npc_id=extraction.id,
-            sample_path=str(last_out_path) if last_out_path else None,
-            samples=len(audio_clips),
-        )
-        return extraction
+        updated_state = await self.database.get_cached_extraction(state.id)
+        if updated_state:
+            self.logger.info(
+                "Voice generation complete",
+                npc_id=updated_state.id,
+                sample_path=str(last_out_path) if last_out_path else None,
+                samples=len(audio_clips),
+                stage_flags=updated_state.stage_flags,
+            )
+            return updated_state
 
-    async def _run_raw_extraction(self, npc_id: int) -> NPCData:
+        return state
+
+    async def _run_raw_extraction(self, npc_id: int) -> NPCPipelineState:
         """Stage 1: Basic raw extraction."""
         self.logger.info("Running raw extraction stage", npc_id=npc_id)
 
         # Use existing NPCExtractionService for raw extraction
-        extraction = await self.raw_service.extract_npc(npc_id)
+        state = await self.raw_service.extract_npc(npc_id)
 
-        # Mark stage as complete
-        extraction.add_stage(ExtractionStage.RAW)
-        extraction = await self._save_extraction(extraction)
+        self.logger.info(
+            "Raw extraction complete",
+            npc_id=npc_id,
+            markdown_length=len(state.raw_markdown),
+            stage_flags=state.stage_flags,
+        )
 
-        self.logger.info("Raw extraction complete", npc_id=npc_id, markdown_length=len(extraction.raw_markdown))
+        return state
 
-        return extraction
-
-    async def _run_llm_extraction(self, extraction: NPCData) -> NPCData:
+    async def _run_llm_extraction(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage 2: LLM-based extraction using Crawl4AI."""
         if not self.api_key:
             self.logger.warning("Skipping LLM extraction - no API key provided")
-            return extraction
+            return state
 
-        self.logger.info("Running LLM extraction stage", npc_id=extraction.id)
+        self.logger.info("Running LLM extraction stage", npc_id=state.id)
 
         try:
             # Use Crawl4AI extractor for structured data
             crawl_extractor = Crawl4AINPCExtractor(api_key=self.api_key)
-            wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(extraction.id)
+            wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(state.id)
 
-            # Store NPCWikiSourcedData directly with TypeAdapter
-            extraction.raw_data = wiki_data
-            extraction.add_stage(ExtractionStage.TEXT)
-            await self._save_extraction(extraction)
+            structured_checksum = hashlib.sha256(wiki_data.model_dump_json().encode("utf-8")).hexdigest()
 
-            self.logger.info("LLM extraction complete", npc_id=extraction.id, npc_name=wiki_data.name.value)
+            await self.database.upsert_wiki_snapshot(
+                npc_id=state.id,
+                raw_markdown=state.raw_markdown,
+                chathead_image_url=state.chathead_image_url,
+                image_url=state.image_url,
+                raw_data=wiki_data,
+                source_checksum=structured_checksum,
+                fetched_at=state.fetched_at or datetime.now(UTC),
+                extraction_success=state.extraction_success,
+                error_message=state.error_message,
+            )
+
+            updated_state = await self.database.get_cached_extraction(state.id)
+
+            if updated_state:
+                self.logger.info(
+                    "LLM extraction complete",
+                    npc_id=updated_state.id,
+                    npc_name=wiki_data.name.value,
+                    stage_flags=updated_state.stage_flags,
+                )
+                return updated_state
         except Exception as e:
             import traceback
 
             self.logger.error(
                 "LLM extraction failed",
-                npc_id=extraction.id,
+                npc_id=state.id,
                 error=str(e),
                 error_type=type(e).__name__,
                 traceback=traceback.format_exc(),
             )
             # Continue pipeline even if LLM extraction fails
+        return state
 
-        return extraction
-
-    async def _run_intelligent_analysis(self, extraction: NPCData) -> NPCData:
+    async def _run_intelligent_analysis(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage 3: Intelligent text and visual analysis."""
         self.logger.info(
-            "Running intelligent analysis stage", npc_id=extraction.id, markdown_length=len(extraction.raw_markdown)
+            "Running intelligent analysis stage", npc_id=state.id, markdown_length=len(state.raw_markdown)
         )
 
         try:
@@ -268,35 +293,35 @@ class UnifiedPipelineService:
                 npc_details,
                 text_characteristics,
                 image_characteristics,
-            ) = await self._run_intelligent_extraction_with_retry(extraction)
+            ) = await self._run_intelligent_extraction_with_retry(state)
 
-            # Store intermediate results for debugging/caching
-            extraction.text_analysis = text_characteristics
-            extraction.visual_analysis = image_characteristics
-
-            # Store the synthesized character profile directly with TypeAdapter
-            extraction.character_profile = npc_details
-
-            # Mark stages complete
-            extraction.add_stage(ExtractionStage.TEXT)
-            extraction.add_stage(ExtractionStage.VISUAL)
-            extraction.add_stage(ExtractionStage.SYNTHESIS)
-            extraction.add_stage(ExtractionStage.PROFILE)
-            extraction.add_stage(ExtractionStage.COMPLETE)
-            extraction = await self._save_extraction(extraction)
-
-            self.logger.info(
-                "Intelligent analysis complete - character profile generated",
-                npc_id=extraction.id,
-                personality_traits=npc_details.personality_traits[:100] if npc_details.personality_traits else "None",
-                occupation=npc_details.occupation,
-                overall_confidence=npc_details.overall_confidence,
+            await self.database.upsert_character_profile(
+                npc_id=state.id,
+                profile=npc_details,
+                text_analysis=text_characteristics,
+                visual_analysis=image_characteristics,
+                pipeline_version=self.pipeline_version,
             )
+
+            updated_state = await self.database.get_cached_extraction(state.id)
+
+            if updated_state:
+                self.logger.info(
+                    "Intelligent analysis complete - character profile generated",
+                    npc_id=updated_state.id,
+                    personality_traits=(
+                        npc_details.personality_traits[:100] if npc_details.personality_traits else "None"
+                    ),
+                    occupation=npc_details.occupation,
+                    overall_confidence=npc_details.overall_confidence,
+                    stage_flags=updated_state.stage_flags,
+                )
+                return updated_state
         except LLMAPIError as e:
             # Handle LLM-specific errors with appropriate logging
             self.logger.error(
                 "LLM API failure during intelligent analysis",
-                npc_id=extraction.id,
+                npc_id=state.id,
                 error=str(e),
                 error_type=type(e).__name__,
             )
@@ -306,14 +331,14 @@ class UnifiedPipelineService:
 
             self.logger.error(
                 "Intelligent analysis failed",
-                npc_id=extraction.id,
+                npc_id=state.id,
                 error=str(e),
                 error_type=type(e).__name__,
                 traceback=traceback.format_exc(),
             )
             # Continue pipeline even if analysis fails
 
-        return extraction
+        return state
 
     @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
     async def _run_text_analysis_with_retry(self, markdown: str, npc_name: str) -> NPCTextCharacteristics:
@@ -353,7 +378,7 @@ class UnifiedPipelineService:
 
     @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
     async def _run_intelligent_extraction_with_retry(
-        self, extraction: NPCData
+        self, state: NPCPipelineState
     ) -> tuple[NPCDetails, NPCTextCharacteristics, NPCVisualCharacteristics]:
         """Run the complete intelligent extraction pipeline with retry logic.
 
@@ -363,10 +388,10 @@ class UnifiedPipelineService:
         Returns:
             Tuple of (npc_details, text_characteristics, image_characteristics)
         """
-        self.logger.debug("Running intelligent extraction with retry protection", npc_name=extraction.npc_name)
+        self.logger.debug("Running intelligent extraction with retry protection", npc_name=state.npc_name)
 
         # Use the main intelligent extractor which handles parallel processing
-        npc_details = await self.intelligent_extractor.aforward(extraction)
+        npc_details = await self.intelligent_extractor.aforward(state)
 
         # For backward compatibility, we need the intermediate results too
         # Since we can't easily get them from the unified call, we'll extract them from the final result
@@ -407,10 +432,6 @@ class UnifiedPipelineService:
             cast(NPCVisualCharacteristics, image_characteristics),
         )
 
-    async def _save_extraction(self, extraction: NPCData) -> NPCData:
-        """Save extraction to database."""
-        return await self.database.save_extraction(extraction)
-
     async def get_extraction_status(self, id: int) -> dict:
         """Get the current status of an extraction."""
         extraction = await self.database.get_cached_extraction(id)
@@ -427,7 +448,8 @@ class UnifiedPipelineService:
             "has_text_analysis": bool(extraction.text_analysis),
             "has_visual_analysis": bool(extraction.visual_analysis),
             "has_character_profile": bool(extraction.character_profile),
-            "is_complete": ExtractionStage.COMPLETE.value in extraction.completed_stages,
+            "stage_flags": extraction.stage_flags,
+            "is_complete": "complete" in extraction.completed_stages,
         }
 
     async def close(self) -> None:

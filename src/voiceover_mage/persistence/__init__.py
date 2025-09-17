@@ -14,12 +14,16 @@ Data Flow: extraction/ data → Database → core/ business logic
 """
 
 from .json_types import PydanticJson
-from .manager import DatabaseManager
-from .models import NPCData, VoiceSample
+from .manager import DatabaseManager, NPCPipelineState
+from .models import AudioTranscript, CharacterProfile, NPC, VoicePreview, WikiSnapshot
 
 __all__ = [
     "DatabaseManager",
-    "NPCData",
-    "VoiceSample",
+    "AudioTranscript",
+    "CharacterProfile",
+    "NPCPipelineState",
+    "NPC",
+    "VoicePreview",
+    "WikiSnapshot",
     "PydanticJson",
 ]

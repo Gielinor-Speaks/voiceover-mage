@@ -8,8 +8,7 @@ import httpx
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from tenacity import retry, stop_after_attempt
 
-from voiceover_mage.extraction.base import ExtractionError, RawNPCExtractor
-from voiceover_mage.persistence import NPCData
+from voiceover_mage.extraction.base import ExtractionError, RawNPCExtractor, RawExtractionResult
 from voiceover_mage.utils.logging import get_logger, log_extraction_step, suppress_library_output
 
 
@@ -45,7 +44,7 @@ class MarkdownNPCExtractor(RawNPCExtractor):
 
         self.logger.info("Initialized MarkdownNPCExtractor", headless=headless)
 
-    async def extract(self, npc_id: int) -> NPCData:
+    async def extract(self, npc_id: int) -> RawExtractionResult:
         """Extract raw markdown and image URLs for the given NPC ID."""
         try:
             url = await self._get_npc_page_url(npc_id)
@@ -55,9 +54,10 @@ class MarkdownNPCExtractor(RawNPCExtractor):
             markdown_content = await self._extract_markdown_content(url)
             chathead_url, image_url = await self._extract_image_urls(markdown_content, npc_name, npc_variant)
 
-            extraction = NPCData(
-                id=npc_id,
+            extraction = RawExtractionResult(
+                npc_id=npc_id,
                 npc_name=npc_name,
+                npc_variant=npc_variant,
                 wiki_url=url,
                 raw_markdown=markdown_content,
                 chathead_image_url=chathead_url,
@@ -81,13 +81,14 @@ class MarkdownNPCExtractor(RawNPCExtractor):
             self.logger.error("Failed to extract NPC data", npc_id=npc_id, error=str(e), error_type=type(e).__name__)
 
             # Return failed extraction record
-            return NPCData(
-                id=npc_id,
+            return RawExtractionResult(
+                npc_id=npc_id,
                 npc_name=f"NPC_{npc_id}",
                 wiki_url="",
                 raw_markdown="",
                 chathead_image_url=None,
                 image_url=None,
+                npc_variant=None,
                 extraction_success=False,
                 error_message=str(e),
             )

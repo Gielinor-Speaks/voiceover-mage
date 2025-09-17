@@ -1,129 +1,129 @@
-# ABOUTME: Database models for persistence layer - SQLModel tables with proper JSON columns
-# ABOUTME: Checkpoint-based pipeline state management with TypeAdapter integration
+# ABOUTME: Normalized persistence models for NPC pipeline state
+# ABOUTME: Captures NPC identity, wiki snapshots, character profiles, voice previews, and transcripts
+
+from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import LargeBinary
-from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import JSON, Column, Field, SQLModel
 
-from voiceover_mage.core.models import NPCWikiSourcedData, VoiceGenerationResult
+from voiceover_mage.core.models import NPCWikiSourcedData
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.persistence.json_types import PydanticJson
 
-if TYPE_CHECKING:
-    from voiceover_mage.core.models import ExtractionStage
+
+def utcnow() -> datetime:
+    """Returns the current UTC timestamp."""
+
+    return datetime.now(UTC)
 
 
-class NPCData(SQLModel, table=True):
-    """Raw extraction data from NPC wiki pages.
-
-    This model stores the unprocessed markdown and image URLs extracted from
-    wiki pages, providing a cache layer before any LLM analysis.
-    """
+class NPC(SQLModel, table=True):
+    """Persistent identity for an NPC."""
 
     __tablename__ = "npc"  # type: ignore[assignment]
 
-    # Primary key - using OSRS NPC ID directly
-    id: int = Field(primary_key=True, description="Unique NPC ID from OSRS/wiki")
-    npc_name: str = Field(description="Name of the NPC")
-    npc_variant: str | None = Field(default=None, description="NPC variant if applicable")
-    wiki_url: str = Field(description="Full URL to the NPC's wiki page")
-
-    # Extracted content
-    raw_markdown: str = Field(description="Full markdown content of the wiki page")
-
-    # Simple image URLs (for Phase 1)
-    chathead_image_url: str | None = Field(default=None, description="URL to the NPC's chathead image")
-    image_url: str | None = Field(default=None, description="URL to the NPC's main/body image")
-
-    # Pipeline stage management with type-safe JSON columns
-    raw_data: NPCWikiSourcedData | None = Field(
-        default=None, sa_column=Column(PydanticJson(NPCWikiSourcedData)), description="Raw extracted data"
-    )
-    text_analysis: NPCTextCharacteristics | None = Field(
-        default=None, sa_column=Column(PydanticJson(NPCTextCharacteristics)), description="Text analysis results"
-    )
-    visual_analysis: NPCVisualCharacteristics | None = Field(
-        default=None, sa_column=Column(PydanticJson(NPCVisualCharacteristics)), description="Visual analysis results"
-    )
-    character_profile: NPCDetails | None = Field(
-        default=None, sa_column=Column(PydanticJson(NPCDetails)), description="Character profile data"
-    )
-    voice_generation: VoiceGenerationResult | None = Field(
+    id: int = Field(primary_key=True, description="Unique NPC identifier from the wiki")
+    name: str = Field(description="Canonical NPC name")
+    variant: str | None = Field(default=None, description="Variant or qualifier for the NPC")
+    wiki_url: str = Field(description="URL to the NPC's wiki page")
+    selected_preview_id: int | None = Field(
         default=None,
-        sa_column=Column(PydanticJson(VoiceGenerationResult)),
-        description="Voice generation results from the provider",
+        foreign_key="voice_preview.id",
+        description="Currently selected voice preview for this NPC",
     )
-    completed_stages: list[str] = Field(
-        default_factory=list, sa_column=Column(JSON), description="Completed pipeline stages"
-    )
+    created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=utcnow, description="Last modification timestamp")
 
-    # Metadata
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="Timestamp when this extraction was created"
+
+class WikiSnapshot(SQLModel, table=True):
+    """Cached wiki content and related metadata for an NPC."""
+
+    __tablename__ = "wiki_snapshot"  # type: ignore[assignment]
+
+    npc_id: int = Field(primary_key=True, foreign_key="npc.id", description="FK to npc.id")
+    raw_markdown: str = Field(description="Raw markdown extracted from the wiki page")
+    chathead_image_url: str | None = Field(default=None, description="Chathead image URL")
+    image_url: str | None = Field(default=None, description="Primary image URL")
+    raw_data_json: NPCWikiSourcedData | None = Field(
+        default=None,
+        sa_column=Column(PydanticJson(NPCWikiSourcedData)),
+        description="Structured raw data extracted from the wiki",
     )
-    extraction_success: bool = Field(default=True, description="Whether the extraction succeeded")
+    source_checksum: str | None = Field(default=None, description="Checksum of the source content")
+    fetched_at: datetime = Field(default_factory=utcnow, description="Timestamp when the snapshot was fetched")
+    extraction_success: bool = Field(default=True, description="Whether the snapshot extraction succeeded")
     error_message: str | None = Field(default=None, description="Error message if extraction failed")
 
-    def has_images(self) -> bool:
-        """Check if any image URLs are available."""
-        return bool(self.chathead_image_url or self.image_url)
 
-    def add_stage(self, stage: "ExtractionStage") -> None:
-        """Add a stage to completed stages."""
-        if stage.value not in self.completed_stages:
-            self.completed_stages.append(stage.value)
-            # Tell SQLAlchemy that the list has been modified
-            flag_modified(self, "completed_stages")
+class CharacterProfile(SQLModel, table=True):
+    """Synthesized characterization data for an NPC."""
 
-    def has_stage(self, stage: "ExtractionStage") -> bool:
-        """Check if a stage has been completed."""
-        return stage.value in self.completed_stages
+    __tablename__ = "character_profile"  # type: ignore[assignment]
 
-
-# NOTE: TypeAdapter JSON columns now implemented above!
-# This model demonstrates the TypeAdapter pattern in action with:
-# - NPCWikiSourcedData for raw_data column
-# - NPCTextCharacteristics for text_analysis column
-# - NPCVisualCharacteristics for visual_analysis column
-# - NPCDetails for character_profile column
-#
-# See: https://github.com/fastapi/sqlmodel/issues/63#issuecomment-2727480036
-
-
-class VoiceSample(SQLModel, table=True):
-    """A generated voice sample associated with an NPC.
-
-    Stores raw audio bytes along with the prompt used and provider metadata.
-    """
-
-    __tablename__ = "voice_sample"  # type: ignore[assignment]
-
-    id: int | None = Field(default=None, primary_key=True, description="Primary key for the voice sample")
-
-    # Association
-    npc_id: int = Field(foreign_key="npc.id", index=True, description="Foreign key to NPCData.id")
-
-    # Prompting
-    voice_prompt: str = Field(description="Descriptive voice prompt used for generation")
-    sample_text: str = Field(description="Sample text used for preview generation")
-
-    # Provider/generator metadata
-    provider: str = Field(description="Provider name, e.g., 'elevenlabs'")
-    generator: str = Field(description="Generator/model identifier, e.g., 'text_to_voice.design:eleven_ttv_v3'")
-    provider_metadata: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON), description="Provider-specific metadata/options"
+    npc_id: int = Field(primary_key=True, foreign_key="npc.id", description="FK to npc.id")
+    profile_json: NPCDetails | None = Field(
+        default=None,
+        sa_column=Column(PydanticJson(NPCDetails)),
+        description="Synthesized character profile ready for voice generation",
     )
+    text_analysis_json: NPCTextCharacteristics | None = Field(
+        default=None,
+        sa_column=Column(PydanticJson(NPCTextCharacteristics)),
+        description="Detailed text analysis results",
+    )
+    visual_analysis_json: NPCVisualCharacteristics | None = Field(
+        default=None,
+        sa_column=Column(PydanticJson(NPCVisualCharacteristics)),
+        description="Detailed visual analysis results",
+    )
+    pipeline_version: str | None = Field(default=None, description="Pipeline version that produced this profile")
+    updated_at: datetime = Field(default_factory=utcnow, description="Timestamp of the latest profile update")
 
-    # Binary audio content (e.g., MP3 bytes)
-    audio_bytes: bytes = Field(sa_column=Column(LargeBinary), description="Raw audio bytes of the sample")
 
-    # Selection flag
-    is_representative: bool = Field(default=False, description="Whether this is the chosen sample for the NPC")
+class VoicePreview(SQLModel, table=True):
+    """Generated voice preview for an NPC."""
 
-    # Timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Creation timestamp")
+    __tablename__ = "voice_preview"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True, description="Primary key for the voice preview")
+    npc_id: int = Field(index=True, foreign_key="npc.id", description="FK to npc.id")
+    voice_prompt: str = Field(description="Prompt used to generate the voice preview")
+    sample_text: str = Field(description="Sample text spoken in the preview")
+    provider: str = Field(description="Voice generation provider")
+    model: str = Field(description="Provider model or generator identifier")
+    generation_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Provider-specific metadata for the generation",
+    )
+    audio_path: str | None = Field(default=None, description="Filesystem path to the generated audio preview")
+    audio_bytes: bytes | None = Field(
+        default=None,
+        sa_column=Column(LargeBinary),
+        description="Raw audio bytes for the preview (if stored inline)",
+    )
+    is_representative: bool = Field(default=False, description="Whether this preview is the chosen representative")
+    created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")
+
+
+class AudioTranscript(SQLModel, table=True):
+    """Transcript associated with an audio preview."""
+
+    __tablename__ = "audio_transcript"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True, description="Primary key for the transcript")
+    npc_id: int = Field(index=True, foreign_key="npc.id", description="FK to npc.id")
+    preview_id: int = Field(foreign_key="voice_preview.id", description="FK to voice_preview.id")
+    provider: str = Field(description="Transcription provider")
+    text: str = Field(description="Transcript text")
+    metadata_json: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Additional metadata for the transcript",
+    )
+    created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")
