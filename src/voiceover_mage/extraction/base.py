@@ -3,7 +3,7 @@
 
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RawNPCExtractor(Protocol):
@@ -44,9 +44,7 @@ class RawExtractionResult(BaseModel):
     extraction_success: bool = True
     error_message: str | None = None
 
-    model_config = {
-        "arbitrary_types_allowed": True,
-    }
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def has_markdown(self) -> bool:

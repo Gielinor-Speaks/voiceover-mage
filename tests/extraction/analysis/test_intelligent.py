@@ -174,5 +174,13 @@ class TestNPCIntelligentExtractor:
         failing_text.aforward = AsyncMock(side_effect=RuntimeError("text failure"))
         self.extractor.text_extractor = failing_text
 
+        safe_image = Mock()
+        safe_image.aforward = AsyncMock(return_value=NPCVisualCharacteristics())
+        self.extractor.image_extractor = safe_image
+
+        safe_synth = Mock()
+        safe_synth.aforward = AsyncMock()
+        self.extractor.synthesizer = safe_synth
+
         with pytest.raises(RuntimeError, match="text failure"):
             self.extractor.forward(state)

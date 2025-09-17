@@ -41,6 +41,9 @@ app = "voiceover_mage:main.app"
 addopts = "-n auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+filterwarnings = [
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+]
 
 [tool.coverage.run]
 source = ["src"]
