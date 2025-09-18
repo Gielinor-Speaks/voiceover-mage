@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -17,7 +18,7 @@ from voiceover_mage.core.models import NPCWikiSourcedData
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
-from voiceover_mage.persistence.models import AudioTranscript, CharacterProfile, NPC, VoicePreview, WikiSnapshot, utcnow
+from voiceover_mage.persistence.models import NPC, AudioTranscript, CharacterProfile, VoicePreview, WikiSnapshot, utcnow
 from voiceover_mage.utils.logging import get_logger
 
 STAGE_ORDER = [
@@ -350,10 +351,8 @@ class DatabaseManager:
         """Persist a generated voice preview."""
         async with self.async_session() as session:
             if is_representative:
-                await session.exec(
-                    update(VoicePreview)
-                    .where(VoicePreview.npc_id == npc_id)
-                    .values(is_representative=False)
+                await session.execute(
+                    update(VoicePreview).where(VoicePreview.npc_id == npc_id).values(is_representative=False)  # type: ignore[arg-type]
                 )
             preview = VoicePreview(
                 npc_id=npc_id,
@@ -387,10 +386,8 @@ class DatabaseManager:
             if not preview or preview.npc_id != npc_id:
                 return None
 
-            await session.exec(
-                update(VoicePreview)
-                .where(VoicePreview.npc_id == npc_id)
-                .values(is_representative=False)
+            await session.execute(
+                update(VoicePreview).where(VoicePreview.npc_id == npc_id).values(is_representative=False)  # type: ignore[arg-type]
             )
 
             preview.is_representative = True
@@ -410,11 +407,9 @@ class DatabaseManager:
         """Return all voice previews for an NPC, newest first."""
         async with self.async_session() as session:
             statement = (
-                select(VoicePreview)
-                .where(VoicePreview.npc_id == npc_id)
-                .order_by(VoicePreview.created_at.desc())
+                select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
             )
-            result = await session.exec(statement)
+            result = await session.exec(statement)  # type: ignore[arg-type]
             return list(result.scalars().all())
 
     async def save_audio_transcript(
@@ -451,15 +446,11 @@ class DatabaseManager:
             profile_row = await session.get(CharacterProfile, npc_id)
 
             previews_result = await session.exec(
-                select(VoicePreview)
-                .where(VoicePreview.npc_id == npc_id)
-                .order_by(VoicePreview.created_at.desc())
+                select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
             )
             previews = list(previews_result.scalars().all())
 
-            transcripts_result = await session.exec(
-                select(AudioTranscript).where(AudioTranscript.npc_id == npc_id)
-            )
+            transcripts_result = await session.exec(select(AudioTranscript).where(AudioTranscript.npc_id == npc_id))  # type: ignore[arg-type]
             transcripts = list(transcripts_result.scalars().all())
 
             return NPCPipelineState(
@@ -469,6 +460,14 @@ class DatabaseManager:
                 voice_previews=previews,
                 audio_transcripts=transcripts,
             )
+
+    async def list_voice_samples(self, npc_id: int) -> list[VoicePreview]:
+        """Return all voice samples for an NPC, newest first. Alias for list_voice_previews."""
+        return await self.list_voice_previews(npc_id)
+
+    async def set_representative_sample(self, npc_id: int, sample_id: int) -> VoicePreview | None:
+        """Set a voice sample as the representative for an NPC. Alias for set_selected_voice_preview."""
+        return await self.set_selected_voice_preview(npc_id, sample_id)
 
     async def compute_stage_map(self, npc_id: int) -> dict[str, bool]:
         """Return derived stage flags for the NPC."""
@@ -480,18 +479,18 @@ class DatabaseManager:
     async def clear_cache(self) -> None:
         """Remove all cached NPC pipeline data."""
         async with self.async_session() as session:
-            await session.exec(delete(AudioTranscript))
-            await session.exec(delete(VoicePreview))
-            await session.exec(delete(CharacterProfile))
-            await session.exec(delete(WikiSnapshot))
-            await session.exec(delete(NPC))
+            await session.execute(delete(AudioTranscript))
+            await session.execute(delete(VoicePreview))
+            await session.execute(delete(CharacterProfile))
+            await session.execute(delete(WikiSnapshot))
+            await session.execute(delete(NPC))
             await session.commit()
 
     async def close(self) -> None:
         await self.engine.dispose()
 
     @asynccontextmanager
-    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+    async def session(self) -> AsyncGenerator[AsyncSession]:
         """Yield an async session for advanced scenarios."""
         async with self.async_session() as session:
             try:

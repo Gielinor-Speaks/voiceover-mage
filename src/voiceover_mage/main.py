@@ -423,7 +423,7 @@ async def _list_voice_samples_async(npc_id: int, json_output: bool):
             str(s.id or "-"),
             s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             s.provider,
-            s.generator,
+            s.model,
             size_kb,
             "✅" if s.is_representative else "",
             prompt_short,

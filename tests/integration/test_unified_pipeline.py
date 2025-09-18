@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -15,7 +16,7 @@ from voiceover_mage.persistence.manager import DatabaseManager, NPCPipelineState
 
 
 @pytest_asyncio.fixture
-async def temp_db() -> DatabaseManager:
+async def temp_db() -> AsyncGenerator[DatabaseManager]:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
     from sqlmodel.ext.asyncio.session import AsyncSession

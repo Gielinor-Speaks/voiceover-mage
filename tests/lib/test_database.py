@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
 import pytest
@@ -16,7 +17,7 @@ from voiceover_mage.persistence.manager import DatabaseManager, NPCPipelineState
 
 
 @pytest_asyncio.fixture
-async def temp_db() -> DatabaseManager:
+async def temp_db() -> AsyncGenerator[DatabaseManager]:
     """Provide an in-memory database manager for async tests."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -83,7 +84,7 @@ async def test_wiki_snapshot_round_trip(temp_db: DatabaseManager):
     state = await _bootstrap_npc(temp_db, npc_id=42)
 
     assert state.raw_markdown.startswith("# Hans")
-    assert state.chathead_image_url.endswith("hans_chat.png")
+    assert state.chathead_image_url is not None and state.chathead_image_url.endswith("hans_chat.png")
     assert state.stage_flags["wiki_data"] is True
     assert state.completed_stages == ["wiki_data"]
 
@@ -183,6 +184,7 @@ async def test_voice_preview_selection(temp_db: DatabaseManager):
     assert first.is_representative is False
     assert second.is_representative is True
 
+    assert first.id is not None
     selected = await temp_db.set_selected_voice_preview(state.id, first.id)
     assert selected is not None
     assert selected.is_representative is True
@@ -207,6 +209,7 @@ async def test_audio_transcript_storage(temp_db: DatabaseManager):
         is_representative=True,
     )
 
+    assert preview.id is not None
     await temp_db.set_selected_voice_preview(state.id, preview.id)
 
     transcript = await temp_db.save_audio_transcript(
@@ -269,6 +272,7 @@ async def test_stage_map_completion(temp_db: DatabaseManager):
         is_representative=True,
     )
 
+    assert preview.id is not None
     await temp_db.save_audio_transcript(
         npc_id=state.id,
         preview_id=preview.id,

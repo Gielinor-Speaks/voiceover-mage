@@ -73,53 +73,59 @@ class TestNPCIntelligentExtractor:
         state = _make_pipeline_state("# Test NPC\nHelpful guide.")
 
         mock_text = Mock()
-        mock_text.aforward = AsyncMock(return_value=NPCTextCharacteristics(
-            personality_traits="helpful",
-            occupation="guide",
-            social_role="assistant",
-            dialogue_patterns="friendly",
-            emotional_range="warm",
-            background_lore="Lumbridge",
-            confidence_score=0.8,
-            reasoning="markdown",
-        ))
+        mock_text.aforward = AsyncMock(
+            return_value=NPCTextCharacteristics(
+                personality_traits="helpful",
+                occupation="guide",
+                social_role="assistant",
+                dialogue_patterns="friendly",
+                emotional_range="warm",
+                background_lore="Lumbridge",
+                confidence_score=0.8,
+                reasoning="markdown",
+            )
+        )
 
         mock_visual = Mock()
-        mock_visual.aforward = AsyncMock(return_value=NPCVisualCharacteristics(
-            chathead_image_url=state.chathead_image_url,
-            image_url=state.image_url,
-            age_category="adult",
-            build_type="average",
-            attire_style="simple",
-            distinctive_features="bald",
-            color_palette="blue",
-            visual_archetype="citizen",
-            confidence_score=0.7,
-            reasoning="images",
-        ))
+        mock_visual.aforward = AsyncMock(
+            return_value=NPCVisualCharacteristics(
+                chathead_image_url=state.chathead_image_url,
+                image_url=state.image_url,
+                age_category="adult",
+                build_type="average",
+                attire_style="simple",
+                distinctive_features="bald",
+                color_palette="blue",
+                visual_archetype="citizen",
+                confidence_score=0.7,
+                reasoning="images",
+            )
+        )
 
         mock_synth = Mock()
-        mock_synth.aforward = AsyncMock(return_value=NPCDetails(
-            npc_name=state.npc_name,
-            personality_traits="Helpful castle servant",
-            occupation="guide",
-            social_role="assistant",
-            dialogue_patterns="friendly",
-            emotional_range="warm",
-            background_lore="Lumbridge",
-            age_category="adult",
-            build_type="average",
-            attire_style="simple",
-            distinctive_features="bald",
-            color_palette="blue",
-            visual_archetype="citizen",
-            chathead_image_url=state.chathead_image_url,
-            image_url=state.image_url,
-            overall_confidence=0.85,
-            text_confidence=0.8,
-            visual_confidence=0.7,
-            synthesis_notes="coherent",
-        ))
+        mock_synth.aforward = AsyncMock(
+            return_value=NPCDetails(
+                npc_name=state.npc_name,
+                personality_traits="Helpful castle servant",
+                occupation="guide",
+                social_role="assistant",
+                dialogue_patterns="friendly",
+                emotional_range="warm",
+                background_lore="Lumbridge",
+                age_category="adult",
+                build_type="average",
+                attire_style="simple",
+                distinctive_features="bald",
+                color_palette="blue",
+                visual_archetype="citizen",
+                chathead_image_url=state.chathead_image_url,
+                image_url=state.image_url,
+                overall_confidence=0.85,
+                text_confidence=0.8,
+                visual_confidence=0.7,
+                synthesis_notes="coherent",
+            )
+        )
 
         self.extractor.text_extractor = mock_text
         self.extractor.image_extractor = mock_visual

@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Iterable
 
-from voiceover_mage.extraction.base import RawNPCExtractor, RawExtractionResult
+from voiceover_mage.extraction.base import RawNPCExtractor
 from voiceover_mage.extraction.wiki.markdown import MarkdownNPCExtractor
 from voiceover_mage.persistence import DatabaseManager, NPCPipelineState
 from voiceover_mage.utils.logging import get_logger
@@ -92,9 +92,7 @@ class NPCExtractionService:
 
         return state
 
-    async def extract_multiple_npcs(
-        self, npc_ids: Iterable[int], progress_callback=None
-    ) -> list[NPCPipelineState]:
+    async def extract_multiple_npcs(self, npc_ids: Iterable[int], progress_callback=None) -> list[NPCPipelineState]:
         """Extract data for multiple NPCs with optional progress reporting."""
         npc_ids = list(npc_ids)
         total = len(npc_ids)
@@ -122,9 +120,7 @@ class NPCExtractionService:
                     results.append(cached)
 
         successful = sum(1 for r in results if r.extraction_success)
-        self.logger.info(
-            "Batch extraction completed", total=total, successful=successful, failed=total - successful
-        )
+        self.logger.info("Batch extraction completed", total=total, successful=successful, failed=total - successful)
 
         return results
 

@@ -159,8 +159,14 @@ class UnifiedPipelineService:
         self.logger.info("Generated voice prompt", npc_id=state.id, voice_description=voice_description)
 
         # Call provider and save audio clips
+        description = voice_description.get("description")
+        sample_text = voice_description.get("sample_text")
+
+        if not description or not sample_text:
+            raise ValueError("Voice description and sample text are required")
+
         audio_clips = await self.voice_service.generate_preview_audio(
-            voice_description=voice_description.get("description"), sample_text=voice_description.get("sample_text")
+            voice_description=description, sample_text=sample_text
         )
 
         # audio_bytes is a tuple of bytes, we should iterate over each until it is exhausted
@@ -282,9 +288,7 @@ class UnifiedPipelineService:
 
     async def _run_intelligent_analysis(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage 3: Intelligent text and visual analysis."""
-        self.logger.info(
-            "Running intelligent analysis stage", npc_id=state.id, markdown_length=len(state.raw_markdown)
-        )
+        self.logger.info("Running intelligent analysis stage", npc_id=state.id, markdown_length=len(state.raw_markdown))
 
         try:
             # Run intelligent extraction with full pipeline retry logic

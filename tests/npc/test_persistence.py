@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from voiceover_mage.persistence.models import AudioTranscript, CharacterProfile, NPC, VoicePreview, WikiSnapshot
+from voiceover_mage.persistence.models import NPC, AudioTranscript, CharacterProfile, VoicePreview, WikiSnapshot
 
 
 def test_npc_defaults():

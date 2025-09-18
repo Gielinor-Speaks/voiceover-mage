@@ -8,7 +8,7 @@ import httpx
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from tenacity import retry, stop_after_attempt
 
-from voiceover_mage.extraction.base import ExtractionError, RawNPCExtractor, RawExtractionResult
+from voiceover_mage.extraction.base import ExtractionError, RawExtractionResult, RawNPCExtractor
 from voiceover_mage.utils.logging import get_logger, log_extraction_step, suppress_library_output
 
 

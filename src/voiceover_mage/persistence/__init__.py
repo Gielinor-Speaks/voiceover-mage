@@ -15,7 +15,7 @@ Data Flow: extraction/ data → Database → core/ business logic
 
 from .json_types import PydanticJson
 from .manager import DatabaseManager, NPCPipelineState
-from .models import AudioTranscript, CharacterProfile, NPC, VoicePreview, WikiSnapshot
+from .models import NPC, AudioTranscript, CharacterProfile, VoicePreview, WikiSnapshot
 
 __all__ = [
     "DatabaseManager",
