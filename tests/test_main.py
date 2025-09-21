@@ -1,7 +1,7 @@
 """Basic tests for voiceover-mage main module."""
 
 import pytest
-from src.voiceover_mage.main import main
+from src.voiceover_mage.main import app as main
 
 
 def test_main_function_exists():
@@ -9,22 +9,26 @@ def test_main_function_exists():
     assert callable(main)
 
 
-def test_main_function_output(capsys):
-    """Test that main function produces expected output."""
-    main()
-    captured = capsys.readouterr()
-    assert "Hello from voiceover-mage!" in captured.out
+@pytest.mark.asyncio
+async def test_main_command_help():
+    """Test that main command can show help."""
+    # Test using the Click testing framework
+    from asyncclick.testing import CliRunner
+
+    runner = CliRunner()
+    result = await runner.invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "Voiceover Mage" in result.output
 
 
-def test_main_function_no_exceptions():
-    """Test that main function runs without raising exceptions."""
-    try:
-        main()
-    except Exception as e:
-        pytest.fail(f"main() raised an exception: {e}")
+@pytest.mark.asyncio
+async def test_main_with_logging_status():
+    """Test that logging-status command works."""
+    from asyncclick.testing import CliRunner
 
+    runner = CliRunner()
+    result = await runner.invoke(main, ["logging-status"])
 
-def test_main_returns_none():
-    """Test that main function returns None (standard for main functions)."""
-    result = main()
-    assert result is None
+    assert result.exit_code == 0
+    assert "Logging Configuration" in result.output

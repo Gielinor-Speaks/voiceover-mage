@@ -1,7 +1,16 @@
+# Ignore local files
+**/.local
+
+# Database
+*.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
+
+# Voiceover Mage Logging
+logs/*
 
 # C extensions
 *.so
@@ -14,8 +23,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/

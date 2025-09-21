@@ -1,0 +1,106 @@
+{
+  "name": "Voiceover Mage Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "voiceover-mage",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+
+  // Features to install in the container
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  },
+
+  // Configure tool-specific properties
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        "ms-python.black-formatter",
+        "ms-vscode.test-adapter-converter",
+        "ms-python.pytest",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-vscode.makefile-tools",
+        "eamodio.gitlens",
+        "github.copilot",
+        "github.copilot-chat"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/app/.venv/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "python.formatting.provider": "none",
+        "python.linting.enabled": false,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll": "explicit"
+          },
+          "editor.formatOnSave": true
+        },
+        "mypy-type-checker.importStrategy": "fromEnvironment",
+        "ruff.importStrategy": "fromEnvironment",
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/*.pyc": true,
+          ".venv": true
+        }
+      }
+    }
+  },
+
+  // Use 'postCreateCommand' to run commands after the container is created
+  "postCreateCommand": "chmod 700 ~/.ssh && chmod 600 ~/.ssh/* 2>/dev/null || true",
+
+  // Configure container user
+  "remoteUser": "app",
+  "containerUser": "app",
+
+  // Persist command history, SSH keys, git config, and Claude Code configuration
+  "mounts": [
+    "source=voiceover-mage-bashhistory,target=/home/app/.bash_history,type=volume",
+    {
+      "source": "${localEnv:HOME}/.ssh",
+      "target": "/home/app/.ssh",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.gitconfig",
+      "target": "/home/app/.gitconfig",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.claude.json",
+      "target": "/home/app/.claude.json",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.claude",
+      "target": "/home/app/.claude",
+      "type": "bind"
+    }
+  ],
+
+  // Environment variables
+  "containerEnv": {
+    "PYTHONPATH": "/app/src",
+    "PYTHONUNBUFFERED": "1",
+    "UV_LINK_MODE": "copy"
+  },
+
+  // Port forwarding
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "Voiceover Mage App",
+      "onAutoForward": "notify"
+    }
+  }
+}
