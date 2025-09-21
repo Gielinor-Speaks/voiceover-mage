@@ -4,27 +4,43 @@
 - **Python 3.13+** (minimum required version)
 - Modern Python features and syntax expected
 
-## Build System
-- **pyproject.toml** for project configuration and dependency management
-- Standard Python packaging with PEP 621 compliance
+## Build System & Dependency Management
+- **uv** for dependency management and running tasks.
+- **pyproject.toml** for project configuration and dependency definition (PEP 621).
 
-## Project Management
-- Uses modern Python project structure with pyproject.toml
-- No external dependencies currently defined (early stage project)
+## Core Dependencies
+- **dspy**: For programming with language models.
+- **ElevenLabs**: For text-to-speech voice generation.
+- **crawl4ai**: For web scraping and data extraction.
+- **Pydantic**: For data validation and settings management.
+- **SQLModel**: For database interaction (ORM).
+- **Loguru**: For logging.
+- **Rich**: For rich text and beautiful formatting in the terminal.
+- **AsyncClick**: For creating asynchronous command-line interfaces.
+
+## Development & Tooling
+- **pytest**: For running automated tests.
+- **ruff**: For linting and code formatting.
+- **pyright**: For static type checking.
 
 ## Common Commands
 ```bash
+# Install dependencies
+uv sync --dev
+
 # Run the application
 uv run app
 
-# Install in development mode (when dependencies are added)
-uv sync --dev
+# Run tests
+uv run pytest
 
-# Python version management
-# Project uses .python-version file for version specification
+# Lint the code
+uv run ruff check .
 ```
 
 ## Development Guidelines
-- Follow Python 3.13+ syntax and features
-- Maintain compatibility with the specified minimum Python version
-- Use type hints where appropriate for AI voice generation components
+- Follow Python 3.13+ syntax and features.
+- Use type hints for all function signatures.
+- Adhere to the `ruff` linter rules for code style and quality.
+- Run `pyright` to identify any typing issues.
+- Write `pytest` tests for all new functionality.

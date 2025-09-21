@@ -3,9 +3,16 @@
 ## Current Structure
 ```
 voiceover-mage/
-├── src/voiceover_mage/  # Main package
-│   ├── __init__.py      # Package initialization
-│   └── main.py          # Application entry point
+├── src/voiceover_mage/
+│   ├── __init__.py
+│   ├── main.py          # Application entry point (CLI)
+│   ├── config.py        # Application configuration
+│   ├── core/            # Core business logic and pipelines
+│   ├── extraction/      # Data extraction from various sources
+│   ├── lib/             # Shared library code
+│   ├── persistence/     # Database models and persistence logic
+│   ├── services/        # External service integrations (e.g., ElevenLabs)
+│   └── utils/           # Utility functions and helpers
 ├── tests/               # Test suite
 ├── docs/                # Documentation and assets
 ├── pyproject.toml       # Project configuration
@@ -15,33 +22,34 @@ voiceover-mage/
 ## Code Organization Rules
 
 ### Module Structure
-- **src/voiceover_mage/main.py**: Entry point and CLI interface
-- Place new modules in `src/voiceover_mage/` package
-- Use descriptive module names: `character_analyzer.py`, `voice_generator.py`, `wiki_scraper.py`
-- Keep related functionality grouped in single modules
+- **`src/voiceover_mage/main.py`**: Entry point and CLI interface using `asyncclick`.
+- **`src/voiceover_mage/config.py`**: Manages application settings and environment variables using Pydantic's `BaseSettings`.
+- **`src/voiceover_mage/core/`**: Contains the main business logic.
+    - `unified_pipeline.py`: The main pipeline for generating voiceovers.
+    - `dashboard_pipeline.py`: Pipeline for generating a dashboard of voiceovers.
+- **`src/voiceover_mage/extraction/`**: Handles data extraction from different sources.
+    - `wiki/`: Scrapes data from OSRS wiki.
+    - `analysis/`: Analyzes extracted data to generate character profiles.
+- **`src/voiceover_mage/persistence/`**: Manages data storage.
+    - `manager.py`: Handles database sessions and operations.
+    - `models.py`: Defines `SQLModel` database tables.
+- **`src/voiceover_mage/services/`**: Interfaces with external APIs.
+    - `voice/elevenlabs.py`: Interacts with the ElevenLabs API.
+- **`src/voiceover_mage/utils/`**: Contains shared utilities.
+    - `logging/`: Configures logging with `Loguru` and `Rich`.
+    - `retry.py`: Provides retry mechanisms for network requests.
 
 ### Architecture Patterns
-- Use Pydantic models for all data structures (NPC profiles, voice characteristics)
-- Implement template-based prompt generation with character trait mapping
-- Structure for batch processing multiple NPCs
-- Separate concerns: data extraction → analysis → voice generation → API integration
+- **Pipeline-based architecture**: Core logic is organized into pipelines (`unified_pipeline.py`).
+- **Separation of Concerns**: Clear separation between data extraction, business logic, persistence, and external services.
+- **Pydantic & SQLModel**: Extensive use of Pydantic for data validation and SQLModel for ORM.
+- **Dependency Injection**: Used implicitly through service classes and configuration objects.
 
 ### File Naming Conventions
-- Snake_case for Python files and modules
-- Descriptive names reflecting functionality
-- Test files: `test_<module_name>.py`
-- Configuration files in root level
+- Snake_case for Python files and modules.
+- Test files: `test_<module_name>.py`.
 
 ### Import Organization
-- Standard library imports first
-- Third-party imports second
-- Local imports last
-- Use absolute imports from package root: `from voiceover_mage.character_analyzer import ...`
-
-### Future Module Organization
-When expanding, create these modules:
-- `character_analyzer.py` - NPC personality extraction
-- `voice_generator.py` - ElevenLabs prompt generation
-- `wiki_scraper.py` - OSRS wiki data extraction
-- `models.py` - Pydantic data models
-- `config.py` - Configuration management
+- Standard library imports first.
+- Third-party imports second.
+- Local imports last, using absolute paths from the package root (e.g., `from voiceover_mage.core import ...`).
