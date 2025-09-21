@@ -101,9 +101,9 @@ class DetailSynthesizer(dspy.Module):
         Returns:
             NPCDetails with synthesized and unified character profile
         """
-        import asyncio
+        import anyio
 
-        return asyncio.run(self.aforward(text_characteristics, visual_characteristics, npc_name))
+        return anyio.run(self.aforward, text_characteristics, visual_characteristics, npc_name)
 
     async def aforward(
         self,

@@ -124,6 +124,6 @@ class TextDetailExtractor(dspy.Module):
         Returns:
             NPCTextCharacteristics with personality traits and context
         """
-        import asyncio
+        import anyio
 
-        return asyncio.run(self.aforward(markdown_content, npc_name, npc_variant))
+        return anyio.run(self.aforward, markdown_content, npc_name, npc_variant)

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from voiceover_mage.core.models import NPCProfile, NPCWikiSourcedData
+from voiceover_mage.core.models import NPCProfile
 from voiceover_mage.core.service import NPCExtractionService
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.intelligent import NPCIntelligentExtractor
@@ -59,61 +59,31 @@ class UnifiedPipelineService:
         self.pipeline_version = "1"
 
     async def run_full_pipeline(self, npc_id: int) -> NPCPipelineState:
-        """Run the complete extraction pipeline for an NPC.
+        """Run the complete extraction pipeline for an NPC."""
+        self.logger.info("Starting pipeline", npc_id=npc_id)
 
-        Args:
-            npc_id: The NPC ID to process
-
-        Returns:
-            The complete extraction with all stages processed
-        """
-        self.logger.info("Starting unified pipeline", npc_id=npc_id)
-
-        # Ensure database tables exist
         await self.database.create_tables()
 
-        # Stage 1: Raw extraction (basic markdown + images)
+        # Stage 1: Raw extraction
         state = await self._run_raw_extraction(npc_id)
 
-        # Stage 2: LLM-based extraction using Crawl4AI
+        # Stage 2: LLM extraction (if API key available)
         if self.api_key:
             state = await self._run_llm_extraction(state)
 
-        # Stage 3: Intelligent analysis (text + visual) - only if we have raw markdown
-        self.logger.info(
-            "Checking intelligent analysis prerequisites",
-            npc_id=npc_id,
-            has_markdown=bool(state.raw_markdown),
-            markdown_length=len(state.raw_markdown) if state.raw_markdown else 0,
-        )
+        # Stage 3: Intelligent analysis (if we have content)
         if state.raw_markdown:
-            self.logger.info("Starting intelligent analysis stage", npc_id=npc_id)
             state = await self._run_intelligent_analysis(state)
         else:
-            self.logger.warning("Skipping intelligent analysis - no markdown content", npc_id=npc_id)
+            self.logger.warning("Skipping analysis - no content", npc_id=npc_id)
 
-        # Stage 4: Synthesis is now handled within the intelligent analysis stage
-        # No separate synthesis needed since NPCIntelligentExtractor does everything
-
-        # Stage 5: Voice generation (preview sample)
+        # Stage 4: Voice generation
         try:
             state = await self._run_voice_generation(state)
         except Exception as e:
-            self.logger.error(
-                "Voice generation stage failed",
-                npc_id=npc_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            self.logger.error("Voice generation failed", npc_id=npc_id, error=str(e))
 
-        self.logger.info(
-            "Pipeline completed",
-            npc_id=npc_id,
-            npc_name=state.npc_name,
-            completed_stages=state.completed_stages,
-            stage_flags=state.stage_flags,
-        )
-
+        self.logger.info("Pipeline complete", npc_id=npc_id, npc_name=state.npc_name)
         return state
 
     def _map_details_to_profile(self, npc_id: int, npc_name: str, details: NPCDetails) -> NPCProfile:
@@ -222,34 +192,20 @@ class UnifiedPipelineService:
 
     async def _run_raw_extraction(self, npc_id: int) -> NPCPipelineState:
         """Stage 1: Basic raw extraction."""
-        self.logger.info("Running raw extraction stage", npc_id=npc_id)
-
-        # Use existing NPCExtractionService for raw extraction
+        self.logger.info("Raw extraction", npc_id=npc_id)
         state = await self.raw_service.extract_npc(npc_id)
-
-        self.logger.info(
-            "Raw extraction complete",
-            npc_id=npc_id,
-            markdown_length=len(state.raw_markdown),
-            stage_flags=state.stage_flags,
-        )
-
+        self.logger.info("Raw extraction complete", npc_id=npc_id, chars=len(state.raw_markdown))
         return state
 
     async def _run_llm_extraction(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage 2: LLM-based extraction using Crawl4AI."""
-        if not self.api_key:
-            self.logger.warning("Skipping LLM extraction - no API key provided")
-            return state
-
-        self.logger.info("Running LLM extraction stage", npc_id=state.id)
+        self.logger.info("LLM extraction", npc_id=state.id)
 
         try:
-            # Use Crawl4AI extractor for structured data
-            crawl_extractor = Crawl4AINPCExtractor(api_key=self.api_key)
-            wiki_data: NPCWikiSourcedData = await crawl_extractor.extract_npc_data(state.id)
+            extractor = Crawl4AINPCExtractor(api_key=self.api_key)
+            wiki_data = await extractor.extract_npc_data(state.id)
 
-            structured_checksum = hashlib.sha256(wiki_data.model_dump_json().encode("utf-8")).hexdigest()
+            checksum = hashlib.sha256(wiki_data.model_dump_json().encode()).hexdigest()
 
             await self.database.upsert_wiki_snapshot(
                 npc_id=state.id,
@@ -257,128 +213,51 @@ class UnifiedPipelineService:
                 chathead_image_url=state.chathead_image_url,
                 image_url=state.image_url,
                 raw_data=wiki_data,
-                source_checksum=structured_checksum,
+                source_checksum=checksum,
                 fetched_at=state.fetched_at or datetime.now(UTC),
                 extraction_success=state.extraction_success,
                 error_message=state.error_message,
             )
 
             updated_state = await self.database.get_cached_extraction(state.id)
-
             if updated_state:
-                self.logger.info(
-                    "LLM extraction complete",
-                    npc_id=updated_state.id,
-                    npc_name=wiki_data.name.value,
-                    stage_flags=updated_state.stage_flags,
-                )
+                self.logger.info("LLM extraction complete", npc_id=state.id, npc_name=wiki_data.name.value)
                 return updated_state
-        except Exception as e:
-            import traceback
 
-            self.logger.error(
-                "LLM extraction failed",
-                npc_id=state.id,
-                error=str(e),
-                error_type=type(e).__name__,
-                traceback=traceback.format_exc(),
-            )
-            # Continue pipeline even if LLM extraction fails
+        except Exception as e:
+            self.logger.error("LLM extraction failed", npc_id=state.id, error=str(e))
+
         return state
 
     async def _run_intelligent_analysis(self, state: NPCPipelineState) -> NPCPipelineState:
         """Stage 3: Intelligent text and visual analysis."""
-        self.logger.info("Running intelligent analysis stage", npc_id=state.id, markdown_length=len(state.raw_markdown))
+        self.logger.info("Intelligent analysis", npc_id=state.id)
 
         try:
-            # Run intelligent extraction with full pipeline retry logic
-            # This uses the new aforward() method with parallel processing and native DSPy async
-            (
-                npc_details,
-                text_characteristics,
-                image_characteristics,
-            ) = await self._run_intelligent_extraction_with_retry(state)
+            details, text_chars, image_chars = await self._run_intelligent_extraction_with_retry(state)
 
             await self.database.upsert_character_profile(
                 npc_id=state.id,
-                profile=npc_details,
-                text_analysis=text_characteristics,
-                visual_analysis=image_characteristics,
+                profile=details,
+                text_analysis=text_chars,
+                visual_analysis=image_chars,
                 pipeline_version=self.pipeline_version,
             )
 
             updated_state = await self.database.get_cached_extraction(state.id)
-
             if updated_state:
                 self.logger.info(
-                    "Intelligent analysis complete - character profile generated",
-                    npc_id=updated_state.id,
-                    personality_traits=(
-                        npc_details.personality_traits[:100] if npc_details.personality_traits else "None"
-                    ),
-                    occupation=npc_details.occupation,
-                    overall_confidence=npc_details.overall_confidence,
-                    stage_flags=updated_state.stage_flags,
+                    "Analysis complete",
+                    npc_id=state.id,
+                    occupation=details.occupation,
+                    confidence=details.overall_confidence,
                 )
                 return updated_state
-        except LLMAPIError as e:
-            # Handle LLM-specific errors with appropriate logging
-            self.logger.error(
-                "LLM API failure during intelligent analysis",
-                npc_id=state.id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            # Continue pipeline - don't fail completely on LLM errors
-        except Exception as e:
-            import traceback
 
-            self.logger.error(
-                "Intelligent analysis failed",
-                npc_id=state.id,
-                error=str(e),
-                error_type=type(e).__name__,
-                traceback=traceback.format_exc(),
-            )
-            # Continue pipeline even if analysis fails
+        except (LLMAPIError, Exception) as e:
+            self.logger.error("Analysis failed", npc_id=state.id, error=str(e))
 
         return state
-
-    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
-    async def _run_text_analysis_with_retry(self, markdown: str, npc_name: str) -> NPCTextCharacteristics:
-        """Run text analysis with retry logic."""
-        self.logger.debug("Running text analysis with retry protection", npc_name=npc_name)
-
-        result = await self.intelligent_extractor.text_extractor.acall(markdown_content=markdown, npc_name=npc_name)
-
-        return cast(NPCTextCharacteristics, result)
-
-    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
-    async def _run_image_analysis_with_retry(self, markdown: str, npc_name: str) -> NPCVisualCharacteristics:
-        """Run image analysis with retry logic."""
-        self.logger.debug("Running image analysis with retry protection", npc_name=npc_name)
-
-        result = await self.intelligent_extractor.image_extractor.acall(markdown_content=markdown, npc_name=npc_name)
-
-        return cast(NPCVisualCharacteristics, result)
-
-    @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
-    async def _run_synthesis_with_retry(
-        self,
-        text_characteristics: NPCTextCharacteristics,
-        image_characteristics: NPCVisualCharacteristics,
-        npc_name: str,
-    ) -> NPCDetails:
-        """Run character synthesis with retry logic."""
-        self.logger.debug("Running synthesis with retry protection", npc_name=npc_name)
-
-        result = await self.intelligent_extractor.synthesizer.acall(
-            text_characteristics=text_characteristics,
-            visual_characteristics=image_characteristics,
-            npc_name=npc_name,
-        )
-
-        return cast(NPCDetails, result)
 
     @llm_retry(max_attempts=3, with_rate_limiting=True, with_circuit_breaker=True)
     async def _run_intelligent_extraction_with_retry(

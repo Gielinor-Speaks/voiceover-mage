@@ -1,10 +1,7 @@
 """Basic tests for voiceover-mage main module."""
 
-from unittest.mock import Mock
-
 import pytest
-import typer
-from src.voiceover_mage.main import main
+from src.voiceover_mage.main import app as main
 
 
 def test_main_function_exists():
@@ -12,41 +9,26 @@ def test_main_function_exists():
     assert callable(main)
 
 
-def test_main_function_output(capsys):
-    """Test that main function produces expected output."""
-    # Create a mock context
-    ctx = Mock(spec=typer.Context)
-    ctx.ensure_object = Mock(return_value=dict())
-    ctx.obj = {}
+@pytest.mark.asyncio
+async def test_main_command_help():
+    """Test that main command can show help."""
+    # Test using the Click testing framework
+    from asyncclick.testing import CliRunner
 
-    # Call main with production mode to avoid creating log directories during tests
-    main(ctx, json_output=True, log_level="INFO", log_file=None)
-    captured = capsys.readouterr()
-    # Main function is a callback that doesn't output directly
-    assert captured.out == ""
+    runner = CliRunner()
+    result = await runner.invoke(main, ["--help"])
 
-
-def test_main_function_no_exceptions():
-    """Test that main function runs without raising exceptions."""
-    # Create a mock context
-    ctx = Mock(spec=typer.Context)
-    ctx.ensure_object = Mock(return_value=dict())
-    ctx.obj = {}
-
-    try:
-        # Call main with production mode to avoid creating log directories during tests
-        main(ctx, json_output=True, log_level="INFO", log_file=None)
-    except Exception as e:
-        pytest.fail(f"main() raised an exception: {e}")
+    assert result.exit_code == 0
+    assert "Voiceover Mage" in result.output
 
 
-def test_main_returns_none():
-    """Test that main function returns None (standard for main functions)."""
-    # Create a mock context
-    ctx = Mock(spec=typer.Context)
-    ctx.ensure_object = Mock(return_value=dict())
-    ctx.obj = {}
+@pytest.mark.asyncio
+async def test_main_with_logging_status():
+    """Test that logging-status command works."""
+    from asyncclick.testing import CliRunner
 
-    # Call main with production mode to avoid creating log directories during tests
-    result = main(ctx, json_output=True, log_level="INFO", log_file=None)
-    assert result is None
+    runner = CliRunner()
+    result = await runner.invoke(main, ["logging-status"])
+
+    assert result.exit_code == 0
+    assert "Logging Configuration" in result.output

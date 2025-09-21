@@ -8,7 +8,7 @@ from voiceover_mage.utils.logging.config import (
     get_logging_status,
     suppress_library_output,
 )
-from voiceover_mage.utils.logging.progress import ProgressLogInterceptor, SmartProgressTracker, create_smart_progress
+from voiceover_mage.utils.logging.progress import SimpleProgressTracker, create_smart_progress
 from voiceover_mage.utils.logging.utils import (
     get_logger,
     log_api_call,
@@ -24,8 +24,7 @@ __all__ = [
     "get_logging_status",
     "suppress_library_output",
     # Progress tracking
-    "ProgressLogInterceptor",
-    "SmartProgressTracker",
+    "SimpleProgressTracker",
     "create_smart_progress",
     # Utilities
     "get_logger",

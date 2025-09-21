@@ -65,9 +65,9 @@ class NPCIntelligentExtractor(dspy.Module):
         Returns:
             NPCDetails: Comprehensive character profile ready for voice generation
         """
-        import asyncio
+        import anyio
 
-        return asyncio.run(self.aforward(raw_extraction))
+        return anyio.run(self.aforward, raw_extraction)
 
     async def aforward(self, raw_extraction: NPCPipelineState) -> NPCDetails:
         """True async version with parallel text/image extraction.

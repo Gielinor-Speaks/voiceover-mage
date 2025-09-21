@@ -1,17 +1,14 @@
-# ABOUTME: Retry logic and error handling for LLM API calls
-# ABOUTME: Implements exponential backoff, rate limiting, and circuit breaker patterns
+# ABOUTME: Simplified retry logic using tenacity library
+# ABOUTME: Leverages tenacity's built-in features for exponential backoff and circuit breaking
 
 import asyncio
-import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 
 from tenacity import (
-    after_log,
-    before_sleep_log,
-    retry,
+    AsyncRetrying,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -19,10 +16,8 @@ from tenacity import (
 
 from voiceover_mage.utils.logging import get_logger
 
-# Type variable for generic functions
 T = TypeVar("T")
 
-# Logger for retry operations
 logger = get_logger(__name__)
 
 
@@ -62,105 +57,91 @@ class CircuitBreakerOpen(LLMAPIError):
     pass
 
 
-class CircuitBreaker:
-    """Simple circuit breaker for API calls."""
+# Circuit breaker state (simplified using tenacity stop conditions)
+_circuit_breaker_state = {
+    "failure_count": 0,
+    "last_failure_time": None,
+    "threshold": 3,
+    "timeout": 30.0,
+    "is_open": False,
+}
 
-    def __init__(
-        self, failure_threshold: int = 5, timeout: float = 60.0, expected_exception: type[Exception] = Exception
+
+def _circuit_breaker_stop(retry_state):
+    """Tenacity stop condition that implements circuit breaker logic."""
+    global _circuit_breaker_state
+
+    current_time = time.time()
+    state = _circuit_breaker_state
+
+    # Check if circuit breaker should reset
+    if (
+        state["is_open"]
+        and state["last_failure_time"]
+        and current_time - state["last_failure_time"] >= state["timeout"]
     ):
-        self.failure_threshold = failure_threshold
-        self.timeout = timeout
-        self.expected_exception = expected_exception
-        self.failure_count = 0
-        self.last_failure_time: float | None = None
-        self.state = "closed"  # closed, open, half_open
+        state["is_open"] = False
+        state["failure_count"] = 0
+        logger.info("Circuit breaker reset")
 
-    def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
-        """Decorator to wrap function with circuit breaker."""
+    # If circuit is open, stop retrying
+    if state["is_open"]:
+        return True  # Stop retrying
 
-        def wrapper(*args, **kwargs):
-            return self._call(func, *args, **kwargs)
+    # Only count failures, let tenacity handle the retry logic
+    # Don't interfere with tenacity's attempt counting
+    if retry_state.outcome and retry_state.outcome.failed:
+        state["failure_count"] += 1
+        state["last_failure_time"] = current_time
 
-        return wrapper
+        if state["failure_count"] >= state["threshold"]:
+            state["is_open"] = True
+            logger.warning("Circuit breaker opened", failures=state["failure_count"])
+            return True  # Stop retrying
 
-    def _call(self, func: Callable[..., T], *args, **kwargs) -> T:
-        """Execute function with circuit breaker logic."""
-        if self.state == "open":
-            if self._should_attempt_reset():
-                self.state = "half_open"
-                logger.info("Circuit breaker half-open, attempting request")
-            else:
-                logger.warning("Circuit breaker open, rejecting request")
-                raise CircuitBreakerOpen(
-                    f"Circuit breaker open. Last failure: {self.last_failure_time}. "
-                    f"Will retry after {self.timeout} seconds."
-                )
-
-        try:
-            result = func(*args, **kwargs)
-            self._on_success()
-            return result
-        except self.expected_exception:
-            self._on_failure()
-            raise
-
-    def _should_attempt_reset(self) -> bool:
-        """Check if enough time has passed to attempt reset."""
-        if self.last_failure_time is None:
-            return True
-        return time.time() - self.last_failure_time >= self.timeout
-
-    def _on_success(self):
-        """Handle successful call."""
-        self.failure_count = 0
-        self.state = "closed"
-        if self.state == "half_open":
-            logger.info("Circuit breaker reset after successful request")
-
-    def _on_failure(self):
-        """Handle failed call."""
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-
-        if self.failure_count >= self.failure_threshold:
-            self.state = "open"
-            logger.warning(
-                "Circuit breaker opened after %d failures",
-                self.failure_count,
-                failure_threshold=self.failure_threshold,
-                timeout=self.timeout,
-            )
+    return False  # Continue retrying
 
 
-class RateLimiter:
-    """Simple rate limiter for API calls."""
-
-    def __init__(self, calls_per_second: float = 1.0):
-        self.calls_per_second = calls_per_second
-        self.min_interval = 1.0 / calls_per_second if calls_per_second > 0 else 0
-        self.last_call_time = 0.0
-
-    async def acquire(self):
-        """Acquire rate limit permission."""
-        if self.min_interval <= 0:
-            return
-
-        current_time = time.time()
-        time_since_last = current_time - self.last_call_time
-
-        if time_since_last < self.min_interval:
-            sleep_time = self.min_interval - time_since_last
-            logger.debug("Rate limiting: sleeping for %.2f seconds", sleep_time)
-            await asyncio.sleep(sleep_time)
-
-        self.last_call_time = time.time()
+# Global rate limiter state
+_rate_limiter_state = {
+    "calls_per_second": 1.0,
+    "last_call_time": 0.0,
+}
 
 
-# Global rate limiter for LLM API calls (1 call per second by default)
-_llm_rate_limiter = RateLimiter(calls_per_second=1.0)
+async def _apply_rate_limiting():
+    """Apply rate limiting using simple async sleep."""
+    state = _rate_limiter_state
 
-# Global circuit breaker for LLM API calls
-_llm_circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=30.0, expected_exception=LLMAPIError)
+    if state["calls_per_second"] <= 0:
+        return
+
+    min_interval = 1.0 / state["calls_per_second"]
+    current_time = time.time()
+    time_since_last = current_time - state["last_call_time"]
+
+    if time_since_last < min_interval:
+        sleep_time = min_interval - time_since_last
+        logger.debug("Rate limiting", sleep_time=sleep_time)
+        await asyncio.sleep(sleep_time)
+
+    state["last_call_time"] = time.time()
+
+
+def _convert_exception(e: Exception) -> Exception:
+    """Convert generic exceptions to LLM-specific ones for better handling."""
+    error_str = str(e).lower()
+
+    if "rate limit" in error_str or "429" in error_str:
+        return LLMRateLimitError(f"Rate limit exceeded: {e}")
+    elif "quota" in error_str or "billing" in error_str:
+        return LLMQuotaExceededError(f"API quota exceeded: {e}")
+    elif "timeout" in error_str:
+        return LLMTimeoutError(f"Request timeout: {e}")
+    elif "connection" in error_str or "network" in error_str:
+        return LLMConnectionError(f"Connection failed: {e}")
+    else:
+        return LLMAPIError(f"LLM API call failed: {e}")
 
 
 def llm_retry(
@@ -171,58 +152,49 @@ def llm_retry(
     with_rate_limiting: bool = True,
     with_circuit_breaker: bool = True,
 ):
-    """
-    Decorator for retrying LLM API calls with exponential backoff.
+    """Simplified LLM retry decorator using tenacity."""
 
-    Args:
-        max_attempts: Maximum number of retry attempts
-        min_wait: Minimum wait time between retries (seconds)
-        max_wait: Maximum wait time between retries (seconds)
-        multiplier: Exponential backoff multiplier
-        with_rate_limiting: Whether to apply rate limiting
-        with_circuit_breaker: Whether to use circuit breaker pattern
-    """
-
-    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
-        @retry(
-            stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=multiplier, min=min_wait, max=max_wait),
-            retry=retry_if_exception_type(
-                (
-                    LLMRateLimitError,
-                    LLMTimeoutError,
-                    LLMConnectionError,
-                    # Don't retry quota exceeded or circuit breaker open
-                )
-            ),
-            before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-            after=after_log(logging.getLogger(__name__), logging.INFO),
-            reraise=True,
-        )
-        async def wrapper(*args, **kwargs) -> T:
-            # Apply rate limiting
+    def decorator(func: Callable):
+        async def wrapper(*args, **kwargs):
+            # Apply rate limiting before each attempt
             if with_rate_limiting:
-                await _llm_rate_limiter.acquire()
+                await _apply_rate_limiting()
 
-            # Apply circuit breaker
+            # Configure retry strategy
+            retry_kwargs = {
+                "stop": stop_after_attempt(max_attempts),
+                "wait": wait_exponential(multiplier=multiplier, min=min_wait, max=max_wait),
+                "retry": retry_if_exception_type(
+                    (
+                        LLMRateLimitError,
+                        LLMTimeoutError,
+                        LLMConnectionError,
+                    )
+                ),
+                "reraise": True,
+            }
+
+            # Add circuit breaker if enabled
             if with_circuit_breaker:
-                try:
-                    return await _llm_circuit_breaker._call(func, *args, **kwargs)
-                except Exception as e:
-                    # Convert generic exceptions to LLM-specific ones for better handling
-                    if "rate limit" in str(e).lower() or "429" in str(e):
-                        raise LLMRateLimitError(f"Rate limit exceeded: {e}") from e
-                    elif "quota" in str(e).lower() or "billing" in str(e).lower():
-                        raise LLMQuotaExceededError(f"API quota exceeded: {e}") from e
-                    elif "timeout" in str(e).lower():
-                        raise LLMTimeoutError(f"Request timeout: {e}") from e
-                    elif "connection" in str(e).lower() or "network" in str(e).lower():
-                        raise LLMConnectionError(f"Connection failed: {e}") from e
-                    else:
-                        # Wrap other exceptions as generic LLM API errors
-                        raise LLMAPIError(f"LLM API call failed: {e}") from e
-            else:
-                return await func(*args, **kwargs)
+                retry_kwargs["stop"] = _circuit_breaker_stop
+
+            async for attempt in AsyncRetrying(**retry_kwargs):
+                with attempt:
+                    try:
+                        return await func(*args, **kwargs)
+                    except (
+                        LLMAPIError,
+                        LLMRateLimitError,
+                        LLMTimeoutError,
+                        LLMConnectionError,
+                        LLMQuotaExceededError,
+                        CircuitBreakerOpen,
+                    ) as e:
+                        # Already an LLM-specific exception, re-raise as-is
+                        raise e
+                    except Exception as e:
+                        # Convert generic exceptions to LLM-specific ones
+                        raise _convert_exception(e) from e
 
         return wrapper
 
@@ -231,65 +203,60 @@ def llm_retry(
 
 @asynccontextmanager
 async def llm_batch_context(calls_per_second: float = 2.0):
-    """
-    Context manager for batch LLM operations with higher rate limits.
-
-    Args:
-        calls_per_second: Higher rate limit for batch operations
-    """
-    global _llm_rate_limiter
-    original_rate_limiter = _llm_rate_limiter
+    """Context manager for batch LLM operations with higher rate limits."""
+    global _rate_limiter_state
+    original_rate = _rate_limiter_state["calls_per_second"]
 
     try:
-        # Temporarily increase rate limit for batch operations
-        _llm_rate_limiter = RateLimiter(calls_per_second=calls_per_second)
+        _rate_limiter_state["calls_per_second"] = calls_per_second
         logger.info("Batch LLM context started", calls_per_second=calls_per_second)
         yield
     finally:
-        # Restore original rate limiter
-        _llm_rate_limiter = original_rate_limiter
+        _rate_limiter_state["calls_per_second"] = original_rate
         logger.info("Batch LLM context ended")
 
 
 def configure_llm_retry(
     rate_limit: float = 1.0, circuit_breaker_threshold: int = 3, circuit_breaker_timeout: float = 30.0
 ):
-    """
-    Configure global LLM retry settings.
+    """Configure global LLM retry settings."""
+    global _rate_limiter_state, _circuit_breaker_state
 
-    Args:
-        rate_limit: Global rate limit (calls per second)
-        circuit_breaker_threshold: Number of failures before circuit breaker opens
-        circuit_breaker_timeout: Time to wait before attempting to close circuit breaker
-    """
-    global _llm_rate_limiter, _llm_circuit_breaker
-
-    _llm_rate_limiter = RateLimiter(calls_per_second=rate_limit)
-    _llm_circuit_breaker = CircuitBreaker(
-        failure_threshold=circuit_breaker_threshold, timeout=circuit_breaker_timeout, expected_exception=LLMAPIError
+    _rate_limiter_state["calls_per_second"] = rate_limit
+    _circuit_breaker_state.update(
+        {
+            "threshold": circuit_breaker_threshold,
+            "timeout": circuit_breaker_timeout,
+            "failure_count": 0,
+            "is_open": False,
+        }
     )
 
-    logger.info(
-        "LLM retry configuration updated",
-        rate_limit=rate_limit,
-        circuit_breaker_threshold=circuit_breaker_threshold,
-        circuit_breaker_timeout=circuit_breaker_timeout,
-    )
+    logger.info("LLM retry configured", rate_limit=rate_limit, threshold=circuit_breaker_threshold)
 
 
 def get_llm_retry_status() -> dict[str, Any]:
     """Get current status of LLM retry mechanisms."""
     return {
         "rate_limiter": {
-            "calls_per_second": _llm_rate_limiter.calls_per_second,
-            "last_call_time": _llm_rate_limiter.last_call_time,
-            "min_interval": _llm_rate_limiter.min_interval,
+            "calls_per_second": _rate_limiter_state["calls_per_second"],
+            "last_call_time": _rate_limiter_state["last_call_time"],
         },
         "circuit_breaker": {
-            "state": _llm_circuit_breaker.state,
-            "failure_count": _llm_circuit_breaker.failure_count,
-            "failure_threshold": _llm_circuit_breaker.failure_threshold,
-            "last_failure_time": _llm_circuit_breaker.last_failure_time,
-            "timeout": _llm_circuit_breaker.timeout,
+            "is_open": _circuit_breaker_state["is_open"],
+            "failure_count": _circuit_breaker_state["failure_count"],
+            "failure_threshold": _circuit_breaker_state["threshold"],
         },
     }
+
+
+def reset_circuit_breaker():
+    """Reset circuit breaker state (useful for testing)."""
+    global _circuit_breaker_state
+    _circuit_breaker_state.update(
+        {
+            "failure_count": 0,
+            "last_failure_time": None,
+            "is_open": False,
+        }
+    )

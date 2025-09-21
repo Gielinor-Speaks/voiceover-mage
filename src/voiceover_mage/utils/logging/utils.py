@@ -7,20 +7,20 @@ import uuid
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-import structlog
+from loguru import logger
 
 # Type variable for decorated functions
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str | None = None) -> Any:
     """Get a logger instance with automatic module detection.
 
     Args:
         name: Logger name, auto-detected from caller if None
 
     Returns:
-        Configured structlog logger instance
+        Configured loguru logger instance with bound context
     """
     if name is None:
         import inspect
@@ -31,7 +31,7 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
             caller_module = frame.f_back.f_globals.get("__name__", "unknown")
             name = caller_module
 
-    return structlog.get_logger(name or "voiceover_mage")
+    return logger.bind(name=name or "voiceover_mage")
 
 
 def generate_operation_id() -> str:
@@ -262,12 +262,12 @@ def log_extraction_step(step_name: str, npc_id: int | None = None) -> Callable[[
 class LogContext:
     """Context manager for binding logger context."""
 
-    def __init__(self, logger: structlog.stdlib.BoundLogger, **context):
-        self.logger = logger
+    def __init__(self, logger_instance: Any, **context):
+        self.logger = logger_instance
         self.context = context
         self.bound_logger = None
 
-    def __enter__(self) -> structlog.stdlib.BoundLogger:
+    def __enter__(self) -> Any:
         self.bound_logger = self.logger.bind(**self.context)
         return self.bound_logger
 

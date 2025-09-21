@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from functools import wraps
+from typing import Any, ParamSpec
 
 from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -20,6 +21,20 @@ from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
 from voiceover_mage.persistence.models import NPC, AudioTranscript, CharacterProfile, VoicePreview, WikiSnapshot, utcnow
 from voiceover_mage.utils.logging import get_logger
+
+P = ParamSpec("P")
+
+
+def with_session[T](func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+    """Decorator that injects an async session as the first argument after self."""
+
+    @wraps(func)
+    async def wrapper(self: DatabaseManager, *args: Any, **kwargs: Any) -> T:
+        async with self.async_session() as session:
+            return await func(self, session, *args, **kwargs)
+
+    return wrapper
+
 
 STAGE_ORDER = [
     "wiki_data",
@@ -219,8 +234,10 @@ class DatabaseManager:
         async with self.engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
 
+    @with_session
     async def ensure_npc(
         self,
+        session: AsyncSession,
         *,
         npc_id: int,
         name: str,
@@ -228,28 +245,27 @@ class DatabaseManager:
         variant: str | None = None,
     ) -> NPC:
         """Create or update the core NPC identity row."""
-        async with self.async_session() as session:
-            npc = await session.get(NPC, npc_id)
-            if npc:
-                changed = False
-                if npc.name != name:
-                    npc.name = name
-                    changed = True
-                if npc.variant != variant:
-                    npc.variant = variant
-                    changed = True
-                if npc.wiki_url != wiki_url:
-                    npc.wiki_url = wiki_url
-                    changed = True
-                if changed:
-                    npc.updated_at = utcnow()
-                    session.add(npc)
-            else:
-                npc = NPC(id=npc_id, name=name, variant=variant, wiki_url=wiki_url)
+        npc = await session.get(NPC, npc_id)
+        if npc:
+            changed = False
+            if npc.name != name:
+                npc.name = name
+                changed = True
+            if npc.variant != variant:
+                npc.variant = variant
+                changed = True
+            if npc.wiki_url != wiki_url:
+                npc.wiki_url = wiki_url
+                changed = True
+            if changed:
+                npc.updated_at = utcnow()
                 session.add(npc)
-            await session.commit()
-            await session.refresh(npc)
-            return npc
+        else:
+            npc = NPC(id=npc_id, name=name, variant=variant, wiki_url=wiki_url)
+            session.add(npc)
+        await session.commit()
+        await session.refresh(npc)
+        return npc
 
     async def upsert_wiki_snapshot(
         self,
@@ -351,7 +367,7 @@ class DatabaseManager:
         """Persist a generated voice preview."""
         async with self.async_session() as session:
             if is_representative:
-                await session.execute(
+                await session.exec(
                     update(VoicePreview).where(VoicePreview.npc_id == npc_id).values(is_representative=False)  # type: ignore[arg-type]
                 )
             preview = VoicePreview(
@@ -386,7 +402,7 @@ class DatabaseManager:
             if not preview or preview.npc_id != npc_id:
                 return None
 
-            await session.execute(
+            await session.exec(
                 update(VoicePreview).where(VoicePreview.npc_id == npc_id).values(is_representative=False)  # type: ignore[arg-type]
             )
 
@@ -403,14 +419,14 @@ class DatabaseManager:
             await session.refresh(preview)
             return preview
 
-    async def list_voice_previews(self, npc_id: int) -> list[VoicePreview]:
+    @with_session
+    async def list_voice_previews(self, session: AsyncSession, npc_id: int) -> list[VoicePreview]:
         """Return all voice previews for an NPC, newest first."""
-        async with self.async_session() as session:
-            statement = (
-                select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
-            )
-            result = await session.exec(statement)  # type: ignore[arg-type]
-            return list(result.scalars().all())
+        statement = (
+            select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
+        )
+        result = await session.exec(statement)  # type: ignore[arg-type]
+        return list(result.scalars().all())
 
     async def save_audio_transcript(
         self,
@@ -435,31 +451,31 @@ class DatabaseManager:
             await session.refresh(transcript)
             return transcript
 
-    async def get_cached_extraction(self, npc_id: int) -> NPCPipelineState | None:
+    @with_session
+    async def get_cached_extraction(self, session: AsyncSession, npc_id: int) -> NPCPipelineState | None:
         """Assemble the aggregated pipeline state for an NPC."""
-        async with self.async_session() as session:
-            npc = await session.get(NPC, npc_id)
-            if not npc:
-                return None
+        npc = await session.get(NPC, npc_id)
+        if not npc:
+            return None
 
-            snapshot = await session.get(WikiSnapshot, npc_id)
-            profile_row = await session.get(CharacterProfile, npc_id)
+        snapshot = await session.get(WikiSnapshot, npc_id)
+        profile_row = await session.get(CharacterProfile, npc_id)
 
-            previews_result = await session.exec(
-                select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
-            )
-            previews = list(previews_result.scalars().all())
+        previews_result = await session.exec(
+            select(VoicePreview).where(VoicePreview.npc_id == npc_id).order_by(desc(VoicePreview.created_at))  # type: ignore[arg-type]
+        )
+        previews = list(previews_result.scalars().all())
 
-            transcripts_result = await session.exec(select(AudioTranscript).where(AudioTranscript.npc_id == npc_id))  # type: ignore[arg-type]
-            transcripts = list(transcripts_result.scalars().all())
+        transcripts_result = await session.exec(select(AudioTranscript).where(AudioTranscript.npc_id == npc_id))  # type: ignore[arg-type]
+        transcripts = list(transcripts_result.scalars().all())
 
-            return NPCPipelineState(
-                npc=npc,
-                wiki_snapshot=snapshot,
-                character_profile_entry=profile_row,
-                voice_previews=previews,
-                audio_transcripts=transcripts,
-            )
+        return NPCPipelineState(
+            npc=npc,
+            wiki_snapshot=snapshot,
+            character_profile_entry=profile_row,
+            voice_previews=previews,
+            audio_transcripts=transcripts,
+        )
 
     async def list_voice_samples(self, npc_id: int) -> list[VoicePreview]:
         """Return all voice samples for an NPC, newest first. Alias for list_voice_previews."""
@@ -476,15 +492,17 @@ class DatabaseManager:
             return {stage: False for stage in STAGE_ORDER}
         return state.stage_flags
 
-    async def clear_cache(self) -> None:
+    @with_session
+    async def clear_cache(self, session: AsyncSession) -> None:
         """Remove all cached NPC pipeline data."""
-        async with self.async_session() as session:
-            await session.execute(delete(AudioTranscript))
-            await session.execute(delete(VoicePreview))
-            await session.execute(delete(CharacterProfile))
-            await session.execute(delete(WikiSnapshot))
-            await session.execute(delete(NPC))
-            await session.commit()
+        # For bulk operations, we use the underlying SQLAlchemy execute method
+        # This is the correct approach for DELETE statements in SQLModel
+        await session.exec(delete(AudioTranscript))
+        await session.exec(delete(VoicePreview))
+        await session.exec(delete(CharacterProfile))
+        await session.exec(delete(WikiSnapshot))
+        await session.exec(delete(NPC))
+        await session.commit()
 
     async def close(self) -> None:
         await self.engine.dispose()

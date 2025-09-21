@@ -142,9 +142,9 @@ class ImageDetailExtractor(dspy.Module):
         Returns:
             NPCVisualCharacteristics with URLs, visual traits, and confidence
         """
-        import asyncio
+        import anyio
 
-        return asyncio.run(self.aforward(markdown_content, npc_name, npc_variant))
+        return anyio.run(self.aforward, markdown_content, npc_name, npc_variant)
 
     async def aforward(
         self, markdown_content: str, npc_name: str, npc_variant: str | None = None

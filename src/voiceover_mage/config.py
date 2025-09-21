@@ -41,6 +41,20 @@ class Config(BaseSettings):
 
     log_file: Path | None = Field(default=None, description="Custom log file path (overrides default)")
 
+    # Pipeline Validation Thresholds
+    confidence_threshold: float = Field(
+        default=0.70, description="Minimum character analysis confidence required for voice generation (0.0-1.0)"
+    )
+    content_diversity_threshold: float = Field(
+        default=0.5, description="Minimum content diversity ratio for valid NPC pages (0.0-1.0)"
+    )
+    llm_enhancement_ratio: float = Field(
+        default=1.5, description="Minimum data size increase ratio for meaningful LLM enhancement"
+    )
+    min_enhanced_data_size: int = Field(
+        default=500, description="Minimum enhanced data size in characters to consider LLM extraction successful"
+    )
+
 
 # Global config instance - lazy loaded when first accessed
 _config_instance: Config | None = None
