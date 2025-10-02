@@ -36,6 +36,14 @@ class NPC(SQLModel, table=True):
         foreign_key="voice_preview.id",
         description="Currently selected voice preview for this NPC",
     )
+    cloned_voice_id: str | None = Field(
+        default=None,
+        description="Provider-specific voice ID for cloned voice (e.g., Hume voice name, ElevenLabs voice ID)",
+    )
+    cloned_voice_provider: str | None = Field(
+        default=None,
+        description="TTS provider used for voice cloning (e.g., 'Hume.ai', 'ElevenLabs')",
+    )
     created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=utcnow, description="Last modification timestamp")
 
@@ -125,5 +133,25 @@ class AudioTranscript(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column(JSON),
         description="Additional metadata for the transcript",
+    )
+    created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")
+
+
+class GeneratedDialogue(SQLModel, table=True):
+    """Generated dialogue using cloned voices."""
+
+    __tablename__ = "generated_dialogue"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True, description="Primary key for generated dialogue")
+    npc_id: int = Field(index=True, foreign_key="npc.id", description="FK to npc.id")
+    source_text: str = Field(description="Original text that was synthesized")
+    audio_bytes: bytes = Field(
+        sa_column=Column(LargeBinary),
+        description="Raw audio bytes for the generated dialogue (MP3 format)",
+    )
+    generation_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Provider-specific metadata for the generation",
     )
     created_at: datetime = Field(default_factory=utcnow, description="Creation timestamp")

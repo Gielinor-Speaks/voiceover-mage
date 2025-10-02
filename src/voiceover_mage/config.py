@@ -25,6 +25,10 @@ class Config(BaseSettings):
         default="",
         description="ElevenLabs API key for voice generation",
     )
+    local_tts_api_url: str = Field(
+        default="http://localhost:8000",
+        description="URL of the local TTS API service",
+    )
 
     # Database Configuration
     database_url: str = Field(

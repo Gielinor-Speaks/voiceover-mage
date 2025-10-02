@@ -48,16 +48,15 @@ class DashboardIntegratedPipeline:
                     or "/w/runescape:about" in wiki_url
                 )
 
-                # Detect common garbage page indicators
+                # Detect common garbage page indicators (must be more specific to avoid false positives)
                 garbage_indicators = [
                     "page not found",
                     "404 error",
                     "no results found",
-                    "search results",
+                    "search results for",  # More specific - avoid matching "jump to search"
                     "did you mean:",
                     "page does not exist",
                     "article not found",
-                    "redirect notice",
                     "the requested page could not be found",
                 ]
 
@@ -93,9 +92,12 @@ class DashboardIntegratedPipeline:
                 content_diversity = unique_lines / max(content_length / 100, 1)  # Rough diversity metric
 
                 # Comprehensive validation for invalid NPCs - based on content and URL redirects
+                # Only fail if we have strong evidence of an invalid page (garbage indicators AND no valid content)
                 is_likely_invalid = (
-                    has_garbage_indicators
-                    or is_homepage_redirect  # NPC redirected to homepage = doesn't exist
+                    is_homepage_redirect  # NPC redirected to homepage = doesn't exist
+                    or (
+                        has_garbage_indicators and not has_npc_content and not has_valid_structure
+                    )  # Garbage page with no NPC content
                     or (
                         not has_npc_content
                         and not has_valid_structure

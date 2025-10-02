@@ -19,7 +19,15 @@ from voiceover_mage.core.models import NPCWikiSourcedData
 from voiceover_mage.extraction.analysis.image import NPCVisualCharacteristics
 from voiceover_mage.extraction.analysis.synthesizer import NPCDetails
 from voiceover_mage.extraction.analysis.text import NPCTextCharacteristics
-from voiceover_mage.persistence.models import NPC, AudioTranscript, CharacterProfile, VoicePreview, WikiSnapshot, utcnow
+from voiceover_mage.persistence.models import (
+    NPC,
+    AudioTranscript,
+    CharacterProfile,
+    GeneratedDialogue,
+    VoicePreview,
+    WikiSnapshot,
+    utcnow,
+)
 from voiceover_mage.utils.logging import get_logger
 
 P = ParamSpec("P")
@@ -517,3 +525,48 @@ class DatabaseManager:
             except Exception:
                 await session.rollback()
                 raise
+
+    # --- Voice cloning methods -----------------------------------------------------------
+
+    @with_session
+    async def get_npc(self, session: AsyncSession, npc_id: int) -> NPC | None:
+        """Get an NPC by ID."""
+        return await session.get(NPC, npc_id)
+
+    @with_session
+    async def update_npc_cloned_voice(
+        self,
+        session: AsyncSession,
+        npc_id: int,
+        voice_id: str,
+        provider: str,
+    ) -> None:
+        """Update an NPC's cloned voice information."""
+        npc = await session.get(NPC, npc_id)
+        if npc:
+            npc.cloned_voice_id = voice_id
+            npc.cloned_voice_provider = provider
+            npc.updated_at = utcnow()
+            session.add(npc)
+            await session.commit()
+
+    async def save_generated_dialogue(
+        self,
+        *,
+        npc_id: int,
+        source_text: str,
+        audio_bytes: bytes,
+        generation_metadata: dict[str, Any] | None = None,
+    ) -> GeneratedDialogue:
+        """Persist a generated dialogue entry."""
+        async with self.async_session() as session:
+            dialogue = GeneratedDialogue(
+                npc_id=npc_id,
+                source_text=source_text,
+                audio_bytes=audio_bytes,
+                generation_metadata=generation_metadata or {},
+            )
+            session.add(dialogue)
+            await session.commit()
+            await session.refresh(dialogue)
+            return dialogue

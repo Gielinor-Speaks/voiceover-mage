@@ -268,14 +268,249 @@ def app(ctx, json: bool, log_level: str, log_file: str | None):
         click.echo(ctx.get_help())
 
 
-# Add commands to the main group
-app.add_command(extract_npc)
-app.add_command(pipeline)
-app.add_command(logging_status)
+# --------------------------
+# Voice cloning CLI commands
+# --------------------------
 
 
-if __name__ == "__main__":
-    app()
+@click.command(name="select-voice")
+@click.argument("npc_id", type=int)
+@click.option("--index", "-i", type=int, default=None, help="Select preview by index (skip interactive mode)")
+@click.pass_context
+async def select_voice(ctx, npc_id: int, index: int | None):
+    """
+    🎭 Select a voice preview for an NPC.
+
+    Opens an interactive menu to browse and select from available voice previews.
+    The selected voice will be used for speech generation with the 'speak' command.
+
+    Supports audio playback if ffplay/ffmpeg is installed on your system.
+
+    Args:
+        npc_id: ID of the NPC
+        --index: Optional index to select directly (0-based)
+    """
+    await _select_voice_async(npc_id, index, ctx.obj["json_output"])
+
+
+async def _select_voice_async(npc_id: int, preview_index: int | None, json_output: bool):
+    """Voice selection implementation with interactive UI."""
+    with with_npc_context(npc_id) as logger:
+        logger.info("Starting voice selection", npc_id=npc_id, preview_index=preview_index)
+
+        db = DatabaseManager()
+        await db.create_tables()
+
+        try:
+            # Fetch NPC and voice previews
+            npc_result = await db.get_npc(npc_id)
+            if not npc_result:
+                error_msg = f"NPC {npc_id} not found"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            voice_samples = await db.list_voice_samples(npc_id)
+            if not voice_samples:
+                error_msg = f"No voice previews found for NPC {npc_id}. Run 'pipeline' first to generate voices."
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            # Interactive selection or direct index
+            selected_index = preview_index
+
+            if selected_index is None and not json_output:
+                # Use interactive selector
+                from voiceover_mage.utils.voice_selector import VoiceSelector
+
+                selector = VoiceSelector(console)
+                selected_index = await selector.select_voice_interactive(voice_samples, npc_result.name)
+
+                if selected_index is None:
+                    logger.info("Voice selection cancelled")
+                    return
+
+            # Validate index
+            if selected_index is None:
+                error_msg = "No voice preview selected"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            if selected_index < 0 or selected_index >= len(voice_samples):
+                error_msg = f"Invalid preview index {selected_index} (must be 0-{len(voice_samples) - 1})"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            selected_preview = voice_samples[selected_index]
+
+            if not json_output:
+                console.print(f"\n🎭 Selecting voice for [bold magenta]{npc_result.name}[/bold magenta]")
+                console.print(f"📝 Preview: {selected_preview.voice_prompt[:70]}...")
+
+            # Update database to mark this as the selected voice
+            result = await db.set_selected_voice_preview(npc_id, selected_preview.id)
+
+            if not result:
+                error_msg = "Failed to update selected voice preview"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            logger.info("Voice selection completed", preview_id=selected_preview.id)
+
+            if not json_output:
+                console.print("✅ Voice selected successfully!")
+                console.print(f"📊 Preview ID: [bold green]{selected_preview.id}[/bold green]")
+                console.print(f"🎯 Provider: [bold blue]{selected_preview.provider}[/bold blue]")
+                console.print("\n[dim]Use 'speak' command to generate dialogue with this voice[/dim]")
+
+        except Exception as e:
+            logger.error("Voice selection failed", error=str(e))
+            if not json_output:
+                console.print(f"[red]❌ Voice selection failed: {e}[/red]")
+            raise
+
+
+@click.command(name="speak")
+@click.argument("npc_id", type=int)
+@click.option("--text", required=True, help="Text to synthesize into speech")
+@click.option("--output", help="Output file path (defaults to generated filename)")
+@click.pass_context
+async def speak(ctx, npc_id: int, text: str, output: str | None):
+    """
+    🗣️ Generate speech using a cloned NPC voice.
+
+    Uses the NPC's cloned voice to synthesize the provided text into speech.
+    The NPC must have a cloned voice created with the clone-voice command first.
+
+    Args:
+        npc_id: ID of the NPC with a cloned voice
+        --text: Text to convert to speech
+        --output: Optional output file path
+    """
+    await _speak_async(npc_id, text, output, ctx.obj["json_output"])
+
+
+async def _speak_async(npc_id: int, text: str, output_path: str | None, json_output: bool):
+    """Generate speech implementation with database operations."""
+    with with_npc_context(npc_id) as logger:
+        logger.info("Starting speech generation", npc_id=npc_id, text_length=len(text))
+
+        db = DatabaseManager()
+        await db.create_tables()
+
+        try:
+            # Fetch NPC with selected voice preview
+            npc_result = await db.get_npc(npc_id)
+            if not npc_result:
+                error_msg = f"NPC {npc_id} not found"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            if not npc_result.selected_preview_id:
+                error_msg = f"NPC {npc_id} ({npc_result.name}) has no selected voice. Run 'select-voice' first."
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            # Load the selected voice preview from database
+            from voiceover_mage.persistence.models import VoicePreview
+
+            async with db.async_session() as session:
+                selected_preview = await session.get(VoicePreview, npc_result.selected_preview_id)
+
+            if not selected_preview:
+                error_msg = f"Selected voice preview {npc_result.selected_preview_id} not found in database"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            if not selected_preview.audio_bytes:
+                error_msg = "Selected voice preview has no audio data"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
+            if not json_output:
+                console.print(f"🗣️ Generating speech for [bold magenta]{npc_result.name}[/bold magenta]")
+                console.print(f"📝 Text: {text[:100]}{'...' if len(text) > 100 else ''}")
+                console.print(f"🎯 Voice Preview: [bold blue]{selected_preview.voice_prompt[:50]}...[/bold blue]")
+                console.print(f"🎵 Provider: [bold cyan]{selected_preview.provider}[/bold cyan]")
+
+            # Initialize local TTS adapter
+            config = get_config()
+
+            from voiceover_mage.services.audio.local import LocalTTSAdapter
+
+            tts_adapter = LocalTTSAdapter(config.local_tts_api_url)
+
+            # Generate speech with reference audio from database
+            audio_bytes = await _run_with_enhanced_progress(
+                tts_adapter.generate_speech_with_reference(
+                    text=text, reference_audio_bytes=selected_preview.audio_bytes, audio_format=".mp3"
+                ),
+                f"🧙‍♂️ Generating speech for {npc_result.name}",
+                json_output,
+                npc_id,
+                npc_result.name,
+            )
+
+            # Determine output path
+            if not output_path:
+                import datetime
+
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = "".join(c for c in npc_result.name if c.isalnum() or c in " -_").strip()
+                safe_name = safe_name.replace(" ", "_")
+                output_path = f"{safe_name}_{timestamp}.wav"
+
+            # Save audio file
+            from pathlib import Path
+
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_bytes(audio_bytes)
+
+            # Save to database
+            await db.save_generated_dialogue(
+                npc_id=npc_id,
+                source_text=text,
+                audio_bytes=audio_bytes,
+                generation_metadata={
+                    "preview_id": selected_preview.id,
+                    "provider": selected_preview.provider,
+                    "voice_prompt": selected_preview.voice_prompt,
+                    "text_length": len(text),
+                    "audio_size": len(audio_bytes),
+                },
+            )
+
+            logger.info("Speech generation completed", output_path=str(output_file), audio_size=len(audio_bytes))
+
+            if not json_output:
+                console.print("✅ Speech generated successfully!")
+                console.print(f"📁 Output: [bold green]{output_file}[/bold green]")
+                console.print(f"📊 Audio size: [bold blue]{len(audio_bytes):,} bytes[/bold blue]")
+                console.print("💾 Saved to database for future reference")
+
+        except Exception as e:
+            logger.error("Speech generation failed", error=str(e))
+            if not json_output:
+                console.print(f"[red]❌ Speech generation failed: {e}[/red]")
+            raise
 
 
 # --------------------------
@@ -304,22 +539,14 @@ async def _list_voice_samples_async(npc_id: int, json_output: bool):
     print_rich_table(console, voice_samples_table)
 
 
-@click.command(name="choose-voice-sample")
-@click.argument("npc_id", type=int)
-@click.argument("sample_id", type=int)
-@click.pass_context
-async def choose_voice_sample(ctx, npc_id: int, sample_id: int):
-    """Choose a representative voice sample for an NPC."""
-    await _choose_voice_sample_async(npc_id, sample_id, ctx.obj["json_output"])
+# Add commands to the main group
+app.add_command(extract_npc)
+app.add_command(pipeline)
+app.add_command(logging_status)
+app.add_command(select_voice)
+app.add_command(speak)
+app.add_command(list_voice_samples)
 
 
-async def _choose_voice_sample_async(npc_id: int, sample_id: int, json_output: bool):
-    db = DatabaseManager()
-    await db.create_tables()
-    result = await db.set_representative_sample(npc_id, sample_id)
-    if not result:
-        console.print(f"[red]Could not find sample {sample_id} for NPC {npc_id}. Nothing changed.[/red]")
-        return
-    console.print(
-        f"[green]Sample {result.id} set as representative for NPC {npc_id} (provider: {result.provider}).[/green]"
-    )
+if __name__ == "__main__":
+    app()

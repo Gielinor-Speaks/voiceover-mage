@@ -121,7 +121,7 @@ class ImageDetailExtractor(dspy.Module):
         config = get_config()
         if config.gemini_api_key:
             # Configure DSPy to use Gemini Pro Vision
-            lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key)
+            lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
             dspy.configure(lm=lm)
 
         self.identify_images = dspy.ChainOfThought(ImageIdentificationSignature)

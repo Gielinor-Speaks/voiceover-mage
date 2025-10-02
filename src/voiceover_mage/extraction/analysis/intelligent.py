@@ -23,7 +23,7 @@ def _configure_dspy_global_state():
     config = get_config()
 
     if config.gemini_api_key:
-        lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key)
+        lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
         dspy.configure(lm=lm)
         logger.info("Configured DSPy with Gemini for intelligent extraction")
         return True
