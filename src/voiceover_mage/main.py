@@ -75,22 +75,6 @@ def _display_extraction_results(extraction, verbose: bool, raw: bool, force_refr
             console.print(f"🖼️ Main Image: {extraction.image_url}")
 
 
-@click.command()
-@click.argument("npc_id", type=int)
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed extraction process")
-@click.option("--raw", is_flag=True, help="Display raw markdown content instead of analyzed data")
-@click.option("--force-refresh", is_flag=True, help="Bypass cache and extract fresh data")
-@click.pass_context
-async def extract_npc(ctx, npc_id: int, verbose: bool, raw: bool, force_refresh: bool):
-    """
-    🕷️ Extract NPC data from the Old School RuneScape wiki.
-
-    Phase 1: Extracts raw markdown and image URLs from wiki pages with caching.
-    Use --raw to see the extracted markdown content.
-    """
-    await _extract_npc_async(npc_id, verbose, raw, force_refresh, ctx.obj["json_output"])
-
-
 async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refresh: bool, json_output: bool):
     """Extract NPC data with optional UI display."""
     with with_npc_context(npc_id) as logger:
@@ -118,20 +102,6 @@ async def _extract_npc_async(npc_id: int, verbose: bool, raw: bool, force_refres
 
         finally:
             await service.close()
-
-
-@click.command()
-@click.argument("npc_id", type=int)
-@click.option("--save", "-s", is_flag=True, help="Save results to file")
-@click.pass_context
-async def pipeline(ctx, npc_id: int, save: bool):
-    """
-    🔄 Run the complete NPC-to-voice pipeline.
-
-    Extracts NPC data, analyzes character traits, and generates voice profile
-    in one seamless workflow.
-    """
-    await _pipeline_async(npc_id, save, ctx.obj["json_output"])
 
 
 async def _pipeline_async(npc_id: int, save_output: bool, json_output: bool):
@@ -234,22 +204,12 @@ def _initialize_logging(json_output: bool, log_level: str | None = None, log_fil
         configure_logging(mode=mode, log_level=final_log_level, log_file=log_file)
 
 
-@click.command(name="logging-status")
-def logging_status():
-    """
-    📊 Show current logging configuration and status.
-    """
-    status = get_logging_status()
-    logging_table = create_logging_status_table(status)
-    print_rich_table(console, logging_table)
-
-
 @click.group(invoke_without_command=True)
 @click.option("--json", is_flag=True, help="Output structured JSON logs instead of rich interface")
 @click.option("--log-level", default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR)")
 @click.option("--log-file", help="Custom log file path")
 @click.pass_context
-def app(ctx, json: bool, log_level: str, log_file: str | None):
+def mage(ctx, json: bool, log_level: str, log_file: str | None):
     """
     🧙‍♂️ Voiceover Mage - AI Voice Generation for OSRS NPCs
 
@@ -269,15 +229,79 @@ def app(ctx, json: bool, log_level: str, log_file: str | None):
 
 
 # --------------------------
-# Voice cloning CLI commands
+# Command Groups
 # --------------------------
 
 
-@click.command(name="select-voice")
+@click.group()
+def generate():
+    """🎭 Generate NPC data and voice profiles"""
+    pass
+
+
+@click.group()
+def voice():
+    """🗣️ Manage and use NPC voices"""
+    pass
+
+
+@click.group()
+def db():
+    """💾 Database operations"""
+    pass
+
+
+@click.group()
+def system():
+    """⚙️ System configuration and status"""
+    pass
+
+
+# --------------------------
+# Generate Commands
+# --------------------------
+
+
+@generate.command(name="extract")
+@click.argument("npc_id", type=int)
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed extraction process")
+@click.option("--raw", is_flag=True, help="Display raw markdown content instead of analyzed data")
+@click.option("--force-refresh", is_flag=True, help="Bypass cache and extract fresh data")
+@click.pass_context
+async def extract_npc_cmd(ctx, npc_id: int, verbose: bool, raw: bool, force_refresh: bool):
+    """
+    🕷️ Extract NPC data from the Old School RuneScape wiki.
+
+    Phase 1: Extracts raw markdown and image URLs from wiki pages with caching.
+    Use --raw to see the extracted markdown content.
+    """
+    await _extract_npc_async(npc_id, verbose, raw, force_refresh, ctx.obj["json_output"])
+
+
+@generate.command(name="pipeline")
+@click.argument("npc_id", type=int)
+@click.option("--save", "-s", is_flag=True, help="Save results to file")
+@click.pass_context
+async def pipeline_cmd(ctx, npc_id: int, save: bool):
+    """
+    🔄 Run the complete NPC-to-voice pipeline.
+
+    Extracts NPC data, analyzes character traits, and generates voice profile
+    in one seamless workflow.
+    """
+    await _pipeline_async(npc_id, save, ctx.obj["json_output"])
+
+
+# --------------------------
+# Voice Commands
+# --------------------------
+
+
+@voice.command(name="select")
 @click.argument("npc_id", type=int)
 @click.option("--index", "-i", type=int, default=None, help="Select preview by index (skip interactive mode)")
 @click.pass_context
-async def select_voice(ctx, npc_id: int, index: int | None):
+async def select_voice_cmd(ctx, npc_id: int, index: int | None):
     """
     🎭 Select a voice preview for an NPC.
 
@@ -285,12 +309,31 @@ async def select_voice(ctx, npc_id: int, index: int | None):
     The selected voice will be used for speech generation with the 'speak' command.
 
     Supports audio playback if ffplay/ffmpeg is installed on your system.
-
-    Args:
-        npc_id: ID of the NPC
-        --index: Optional index to select directly (0-based)
     """
     await _select_voice_async(npc_id, index, ctx.obj["json_output"])
+
+
+@voice.command(name="speak")
+@click.argument("npc_id", type=int)
+@click.option("--text", required=True, help="Text to synthesize into speech")
+@click.option("--output", help="Output file path (defaults to generated filename)")
+@click.pass_context
+async def speak_cmd(ctx, npc_id: int, text: str, output: str | None):
+    """
+    🗣️ Generate speech using a cloned NPC voice.
+
+    Uses the NPC's cloned voice to synthesize the provided text into speech.
+    The NPC must have a cloned voice created with the clone-voice command first.
+    """
+    await _speak_async(npc_id, text, output, ctx.obj["json_output"])
+
+
+@voice.command(name="list")
+@click.argument("npc_id", type=int)
+@click.pass_context
+async def list_voices_cmd(ctx, npc_id: int):
+    """📋 List all generated voice samples for an NPC."""
+    await _list_voice_samples_async(npc_id, ctx.obj["json_output"])
 
 
 async def _select_voice_async(npc_id: int, preview_index: int | None, json_output: bool):
@@ -377,26 +420,6 @@ async def _select_voice_async(npc_id: int, preview_index: int | None, json_outpu
             if not json_output:
                 console.print(f"[red]❌ Voice selection failed: {e}[/red]")
             raise
-
-
-@click.command(name="speak")
-@click.argument("npc_id", type=int)
-@click.option("--text", required=True, help="Text to synthesize into speech")
-@click.option("--output", help="Output file path (defaults to generated filename)")
-@click.pass_context
-async def speak(ctx, npc_id: int, text: str, output: str | None):
-    """
-    🗣️ Generate speech using a cloned NPC voice.
-
-    Uses the NPC's cloned voice to synthesize the provided text into speech.
-    The NPC must have a cloned voice created with the clone-voice command first.
-
-    Args:
-        npc_id: ID of the NPC with a cloned voice
-        --text: Text to convert to speech
-        --output: Optional output file path
-    """
-    await _speak_async(npc_id, text, output, ctx.obj["json_output"])
 
 
 async def _speak_async(npc_id: int, text: str, output_path: str | None, json_output: bool):
@@ -513,19 +536,6 @@ async def _speak_async(npc_id: int, text: str, output_path: str | None, json_out
             raise
 
 
-# --------------------------
-# Voice sample CLI utilities
-# --------------------------
-
-
-@click.command(name="list-voice-samples")
-@click.argument("npc_id", type=int)
-@click.pass_context
-async def list_voice_samples(ctx, npc_id: int):
-    """List all generated voice samples for an NPC."""
-    await _list_voice_samples_async(npc_id, ctx.obj["json_output"])
-
-
 async def _list_voice_samples_async(npc_id: int, json_output: bool):
     db = DatabaseManager()
     await db.create_tables()
@@ -539,14 +549,28 @@ async def _list_voice_samples_async(npc_id: int, json_output: bool):
     print_rich_table(console, voice_samples_table)
 
 
-# Add commands to the main group
-app.add_command(extract_npc)
-app.add_command(pipeline)
-app.add_command(logging_status)
-app.add_command(select_voice)
-app.add_command(speak)
-app.add_command(list_voice_samples)
+# --------------------------
+# System Commands
+# --------------------------
+
+
+@system.command(name="status")
+def system_status():
+    """📊 Show current logging configuration and status."""
+    status = get_logging_status()
+    logging_table = create_logging_status_table(status)
+    print_rich_table(console, logging_table)
+
+
+# --------------------------
+# Register command groups
+# --------------------------
+
+mage.add_command(generate)
+mage.add_command(voice)
+mage.add_command(db)
+mage.add_command(system)
 
 
 if __name__ == "__main__":
-    app()
+    mage()

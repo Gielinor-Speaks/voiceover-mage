@@ -39,7 +39,7 @@ requires = ["uv_build>=0.8.11,<0.9.0"]
 build-backend = "uv_build"
 
 [project.scripts]
-app = "voiceover_mage:main.app"
+mage = "voiceover_mage:main.mage"
 
 [tool.pytest.ini_options]
 addopts = "-n auto"

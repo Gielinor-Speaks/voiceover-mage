@@ -126,6 +126,10 @@ class DashboardIntegratedPipeline:
                 dashboard.error_stage(PipelineStage.RAW_EXTRACTION, error_msg)
                 raise ValueError(f"Invalid NPC {npc_id}: {error_msg}")
 
+            # Update dashboard with the discovered NPC name
+            if state.npc_name and state.npc_name != "Unknown NPC":
+                dashboard.update_npc_name(state.npc_name)
+
             dashboard.complete_stage(
                 PipelineStage.RAW_EXTRACTION,
                 data={

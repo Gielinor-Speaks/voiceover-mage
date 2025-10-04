@@ -108,6 +108,10 @@ class PipelineDashboard:
         """Update stage data without changing status."""
         self.stages[stage].data.update(data)
 
+    def update_npc_name(self, npc_name: str) -> None:
+        """Update the NPC name displayed in the dashboard."""
+        self.npc_name = npc_name
+
     def create_renderable(self) -> Panel:
         """Create a progressive rich renderable for the live dashboard."""
         # Calculate elapsed time
