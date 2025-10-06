@@ -1,5 +1,6 @@
 # ABOUTME: Audio playback utilities for previewing voice samples in the terminal
 
+import contextlib
 import shutil
 import subprocess
 import tempfile
@@ -99,7 +100,5 @@ class AudioPlayer:
             return False
         finally:
             # Clean up temp file
-            try:
+            with contextlib.suppress(Exception):
                 tmp_path.unlink()
-            except Exception:
-                pass

@@ -40,27 +40,35 @@ class NPCWikiSourcedData(BaseModel):
     # Core identification
     name: TrackedField[str] = Field(description="NPC name")
     variant: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No variant specified"),
+        default_factory=lambda: TrackedField(
+            value=None, source="default", confidence=1.0, evidence="No variant specified"
+        ),
         description="NPC variant (e.g., 'Pete', 'Ardougne', etc.)",
     )
 
     # Character information
     occupation: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No occupation specified"),
+        default_factory=lambda: TrackedField(
+            value=None, source="default", confidence=1.0, evidence="No occupation specified"
+        ),
         description="NPC's job or role",
     )
     location: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No location specified"),
+        default_factory=lambda: TrackedField(
+            value=None, source="default", confidence=1.0, evidence="No location specified"
+        ),
         description="Where the NPC can be found",
     )
 
     # Personality and behavior
     personality_summary: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No personality summary"),
+        default_factory=lambda: TrackedField(
+            value=None, source="default", confidence=1.0, evidence="No personality summary"
+        ),
         description="Brief personality description",
     )
     dialogue_style: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(
+        default_factory=lambda: TrackedField(
             value=None, source="default", confidence=1.0, evidence="No dialogue style specified"
         ),
         description="How the NPC speaks and communicates",
@@ -68,23 +76,27 @@ class NPCWikiSourcedData(BaseModel):
 
     # Physical characteristics
     appearance: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(
+        default_factory=lambda: TrackedField(
             value=None, source="default", confidence=1.0, evidence="No appearance description"
         ),
         description="Physical appearance",
     )
     age_estimate: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No age estimate"),
+        default_factory=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No age estimate"),
         description="Estimated age category (young, middle-aged, elderly, etc.)",
     )
 
     # Quest and game context
     quest_involvement: TrackedField[list[str]] = Field(
-        default=lambda: TrackedField(value=[], source="default", confidence=1.0, evidence="No quest involvement"),
+        default_factory=lambda: TrackedField(
+            value=[], source="default", confidence=1.0, evidence="No quest involvement"
+        ),
         description="Quests this NPC is involved in",
     )
     game_significance: TrackedField[str | None] = Field(
-        default=lambda: TrackedField(value=None, source="default", confidence=1.0, evidence="No special significance"),
+        default_factory=lambda: TrackedField(
+            value=None, source="default", confidence=1.0, evidence="No special significance"
+        ),
         description="Significance or importance in the game world",
     )
 

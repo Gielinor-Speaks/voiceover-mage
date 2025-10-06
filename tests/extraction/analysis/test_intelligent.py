@@ -49,7 +49,10 @@ class TestDSPyConfiguration:
         mock_lm.return_value = lm_instance
 
         assert _configure_dspy_global_state() is True
-        mock_lm.assert_called_once_with("gemini/gemini-2.5-flash", api_key="abc")
+        # DSPy LM now includes an adapter parameter by default
+        call_args = mock_lm.call_args
+        assert call_args[0] == ("gemini/gemini-2.5-flash",)
+        assert call_args[1]["api_key"] == "abc"
         mock_configure.assert_called_once_with(lm=lm_instance)
 
     @patch("voiceover_mage.extraction.analysis.intelligent.get_config")

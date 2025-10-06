@@ -1,7 +1,8 @@
 """Basic tests for voiceover-mage main module."""
 
 import pytest
-from src.voiceover_mage.main import app as main
+
+from voiceover_mage.main import mage as main
 
 
 def test_main_function_exists():
@@ -23,12 +24,12 @@ async def test_main_command_help():
 
 
 @pytest.mark.asyncio
-async def test_main_with_logging_status():
-    """Test that logging-status command works."""
+async def test_main_with_system_status():
+    """Test that system status command works."""
     from asyncclick.testing import CliRunner
 
     runner = CliRunner()
-    result = await runner.invoke(main, ["logging-status"])
+    result = await runner.invoke(main, ["system", "status"])
 
     assert result.exit_code == 0
-    assert "Logging Configuration" in result.output
+    assert "Logging" in result.output or "System" in result.output

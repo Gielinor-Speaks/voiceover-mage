@@ -307,15 +307,16 @@ class TestCrawl4AINPCExtractorErrorHandling:
             assert "Failed to parse extracted content as JSON" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_extract_npc_data_invalid_npc_data(self, extractor):
+    async def test_extract_npc_data_minimal_fields(self, extractor):
+        """Test that extractor handles minimal data with defaults."""
         url = "https://oldschool.runescape.wiki/w/Bob"
 
-        # Missing required fields
-        invalid_data = [{"name": "Bob"}]  # Missing gender, race, etc.
+        # Minimal data - only name provided, rest should get defaults
+        minimal_data = [{"name": "Bob"}]
 
         mock_result = MagicMock()
         mock_result.success = True
-        mock_result.extracted_content = json.dumps(invalid_data)
+        mock_result.extracted_content = json.dumps(minimal_data)
 
         with patch("voiceover_mage.extraction.wiki.crawl4ai.AsyncWebCrawler") as mock_crawler_class:
             mock_crawler = AsyncMock()
@@ -327,13 +328,15 @@ class TestCrawl4AINPCExtractorErrorHandling:
             mock_context_manager.__aexit__.return_value = None
             mock_crawler_class.return_value = mock_context_manager
 
-            # The retry mechanism converts exceptions to LLMAPIError and doesn't retry it
-            from voiceover_mage.utils.retry import LLMAPIError
+            # Should succeed and populate defaults
+            result = await extractor._extract_npc_data_from_url(url)
 
-            with pytest.raises(LLMAPIError) as exc_info:
-                await extractor._extract_npc_data_from_url(url)
-
-            assert "Failed to validate NPC data" in str(exc_info.value)
+            assert result is not None
+            assert len(result) == 1
+            assert result[0].name.value == "Bob"
+            # Check that defaults were applied
+            assert result[0].variant.value is None
+            assert result[0].variant.source == "default"
 
     @pytest.mark.asyncio
     async def test_extract_npc_data_unexpected_exception(self, extractor):

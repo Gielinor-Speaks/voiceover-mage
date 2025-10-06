@@ -393,6 +393,13 @@ async def _select_voice_async(npc_id: int, preview_index: int | None, json_outpu
 
             selected_preview = voice_samples[selected_index]
 
+            if not selected_preview.id:
+                error_msg = "Selected preview has no ID"
+                logger.error(error_msg)
+                if not json_output:
+                    console.print(f"[red]❌ {error_msg}[/red]")
+                return
+
             if not json_output:
                 console.print(f"\n🎭 Selecting voice for [bold magenta]{npc_result.name}[/bold magenta]")
                 console.print(f"📝 Preview: {selected_preview.voice_prompt[:70]}...")

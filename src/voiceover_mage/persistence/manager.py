@@ -550,6 +550,36 @@ class DatabaseManager:
             session.add(npc)
             await session.commit()
 
+    @with_session
+    async def get_cached_dialogue(
+        self,
+        session: AsyncSession,
+        npc_id: int,
+        text: str,
+    ) -> GeneratedDialogue | None:
+        """Look up cached dialogue by NPC ID and text content.
+
+        Uses content-addressable hash for fast O(1) indexed lookup.
+
+        Args:
+            session: Database session
+            npc_id: NPC identifier
+            text: Dialogue text to search for
+
+        Returns:
+            Cached dialogue if found, None otherwise
+        """
+        from sqlalchemy import and_
+
+        from voiceover_mage.utils.text_hash import compute_dialogue_hash
+
+        text_hash = compute_dialogue_hash(text)
+        statement = select(GeneratedDialogue).where(
+            and_(GeneratedDialogue.npc_id == npc_id, GeneratedDialogue.source_text_hash == text_hash)  # type: ignore[arg-type]
+        )
+        result = await session.exec(statement)  # type: ignore[arg-type]
+        return result.scalars().first()
+
     async def save_generated_dialogue(
         self,
         *,
@@ -558,11 +588,14 @@ class DatabaseManager:
         audio_bytes: bytes,
         generation_metadata: dict[str, Any] | None = None,
     ) -> GeneratedDialogue:
-        """Persist a generated dialogue entry."""
+        """Persist a generated dialogue entry with content-addressable hash."""
+        from voiceover_mage.utils.text_hash import compute_dialogue_hash
+
         async with self.async_session() as session:
             dialogue = GeneratedDialogue(
                 npc_id=npc_id,
                 source_text=source_text,
+                source_text_hash=compute_dialogue_hash(source_text),
                 audio_bytes=audio_bytes,
                 generation_metadata=generation_metadata or {},
             )

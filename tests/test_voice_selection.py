@@ -109,6 +109,7 @@ class TestVoiceSelectionWorkflow:
         assert len(samples) == 2
 
         # Select a voice preview
+        assert preview1.id is not None
         result = await db.set_selected_voice_preview(1001, preview1.id)
         assert result is not None
         assert result.is_representative is True

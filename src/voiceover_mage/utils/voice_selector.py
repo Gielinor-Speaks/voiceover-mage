@@ -1,7 +1,7 @@
 # ABOUTME: Interactive voice selection UI for choosing voice previews from the terminal
 
-import questionary
-from questionary import Choice
+import contextlib
+
 from rich.console import Console
 from rich.table import Table
 
@@ -89,6 +89,11 @@ class VoiceSelector:
             return None
 
         # Use prompt_toolkit directly for custom keybindings
+        import subprocess
+        import tempfile
+        import threading
+        from pathlib import Path
+
         from prompt_toolkit import Application
         from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.layout import FormattedTextControl, Window
@@ -96,16 +101,12 @@ class VoiceSelector:
         from prompt_toolkit.layout.layout import Layout
         from prompt_toolkit.styles import Style
         from prompt_toolkit.widgets import Frame
-        import subprocess
-        import tempfile
-        import threading
-        from pathlib import Path
 
         kb = KeyBindings()
-        current_idx = {"value": 0}
-        result = {"value": None}
-        playing = {"value": False}
-        audio_process = {"value": None}
+        current_idx: dict[str, int] = {"value": 0}
+        result: dict[str, int | None] = {"value": None}
+        playing: dict[str, bool] = {"value": False}
+        audio_process: dict[str, subprocess.Popen[bytes] | None] = {"value": None}
 
         # Custom style for the menu
         custom_style = Style.from_dict(
@@ -154,21 +155,20 @@ class VoiceSelector:
                     audio_process["value"].terminate()
                     audio_process["value"].wait(timeout=0.5)
                 except (subprocess.TimeoutExpired, Exception):
-                    try:
+                    with contextlib.suppress(Exception):
                         audio_process["value"].kill()
-                    except Exception:
-                        pass
                 audio_process["value"] = None
             playing["value"] = False
 
         def play_audio_background(idx: int, app):
             """Play audio in background thread."""
-            if not previews[idx].audio_bytes:
+            audio_bytes = previews[idx].audio_bytes
+            if not audio_bytes:
                 return
 
             # Write audio to temp file
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-                tmp.write(previews[idx].audio_bytes)
+                tmp.write(audio_bytes)
                 tmp_path = Path(tmp.name)
 
             # Start ffplay in background
@@ -180,10 +180,8 @@ class VoiceSelector:
             process.wait()
 
             # Cleanup
-            try:
+            with contextlib.suppress(Exception):
                 tmp_path.unlink()
-            except Exception:
-                pass
 
             # Clear playing state and refresh
             if audio_process["value"] == process:  # Only clear if we're still the current player
