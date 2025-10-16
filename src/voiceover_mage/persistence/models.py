@@ -145,10 +145,10 @@ class GeneratedDialogue(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True, description="Primary key for generated dialogue")
     npc_id: int = Field(index=True, foreign_key="npc.id", description="FK to npc.id")
     source_text: str = Field(description="Original text that was synthesized")
-    source_text_hash: str = Field(
+    lookup_hash: str = Field(
         index=True,
         max_length=64,
-        description="SHA256 hash of normalized source_text for fast dialogue matching",
+        description="SHA256 hash of npc_id:normalized_text for content-addressable audio lookup",
     )
     audio_bytes: bytes = Field(
         sa_column=Column(LargeBinary),

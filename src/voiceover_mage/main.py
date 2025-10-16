@@ -490,7 +490,7 @@ async def _speak_async(npc_id: int, text: str, output_path: str | None, json_out
             # Generate speech with reference audio from database
             audio_bytes = await _run_with_enhanced_progress(
                 tts_adapter.generate_speech_with_reference(
-                    text=text, reference_audio_bytes=selected_preview.audio_bytes, audio_format=".mp3"
+                    text=text, reference_audio_bytes=selected_preview.audio_bytes, audio_format="wav"
                 ),
                 f"🧙‍♂️ Generating speech for {npc_result.name}",
                 json_output,

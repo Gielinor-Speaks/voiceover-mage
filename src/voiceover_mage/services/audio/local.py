@@ -108,7 +108,7 @@ class LocalTTSAdapter(TTSProvider):
             )
 
             # Decode the response audio
-            audio_data = base64.b64decode(response["audio_base64"])
+            audio_data = base64.b64decode(response["audio"])
 
             logger.debug(f"Generated {len(audio_data)} bytes of audio data")
             logger.info("Speech generation completed")
@@ -138,7 +138,7 @@ class LocalTTSAdapter(TTSProvider):
         Args:
             text: Text to synthesize
             audio_base64: Base64-encoded reference audio
-            audio_format: Audio format (e.g., '.mp3', '.wav')
+            audio_format: Audio format (e.g., 'mp3', 'wav')
 
         Returns:
             Dict containing the API response with audio_base64 and metadata
@@ -146,17 +146,17 @@ class LocalTTSAdapter(TTSProvider):
         payload = {
             "text": text,
             "prompt_audio": audio_base64,
-            "prompt_audio_format": audio_format,
-            "generation": {
-                "do_sample": True,
-                "top_p": 0.8,
-                "top_k": 30,
-                "temperature": 0.8,
-                "length_penalty": 0.0,
-                "num_beams": 3,
-                "repetition_penalty": 10.0,
-                "max_mel_tokens": 1500,
-            },
+            # "audio_format": audio_format, --- This field is not used by the API ---
+            "output_audio_format": "mp3",
+            "emotion_mode": "text_description",
+            "do_sample": True,
+            "top_p": 0.8,
+            "top_k": 30,
+            "temperature": 0.8,
+            "length_penalty": 0.0,
+            "num_beams": 3,
+            "repetition_penalty": 10.0,
+            "max_mel_tokens": 1500,
             "interval_silence": 200,
             "max_text_tokens_per_segment": 120,
         }

@@ -573,9 +573,33 @@ class DatabaseManager:
 
         from voiceover_mage.utils.text_hash import compute_dialogue_hash
 
-        text_hash = compute_dialogue_hash(text)
+        text_hash = compute_dialogue_hash(npc_id, text)
         statement = select(GeneratedDialogue).where(
-            and_(GeneratedDialogue.npc_id == npc_id, GeneratedDialogue.source_text_hash == text_hash)  # type: ignore[arg-type]
+            and_(GeneratedDialogue.npc_id == npc_id, GeneratedDialogue.lookup_hash == text_hash)  # type: ignore[arg-type]
+        )
+        result = await session.exec(statement)  # type: ignore[arg-type]
+        return result.scalars().first()
+
+    @with_session
+    async def get_dialogue_by_hash(
+        self,
+        session: AsyncSession,
+        dialogue_hash: str,
+    ) -> GeneratedDialogue | None:
+        """Look up dialogue directly by dialogue hash.
+
+        Allows clients to fetch audio directly using a pre-computed hash
+        without needing to know the NPC ID or original text.
+
+        Args:
+            session: Database session
+            dialogue_hash: SHA256 hash of npc_id:normalized_text
+
+        Returns:
+            Cached dialogue if found, None otherwise
+        """
+        statement = select(GeneratedDialogue).where(
+            GeneratedDialogue.lookup_hash == dialogue_hash  # type: ignore[arg-type]
         )
         result = await session.exec(statement)  # type: ignore[arg-type]
         return result.scalars().first()
@@ -595,7 +619,7 @@ class DatabaseManager:
             dialogue = GeneratedDialogue(
                 npc_id=npc_id,
                 source_text=source_text,
-                source_text_hash=compute_dialogue_hash(source_text),
+                lookup_hash=compute_dialogue_hash(npc_id, source_text),
                 audio_bytes=audio_bytes,
                 generation_metadata=generation_metadata or {},
             )

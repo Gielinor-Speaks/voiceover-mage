@@ -37,8 +37,8 @@ class TestDialogueCaching:
             generation_metadata={"provider": "test"},
         )
 
-        assert dialogue.source_text_hash is not None
-        assert len(dialogue.source_text_hash) == 64  # SHA256 hex length
+        assert dialogue.lookup_hash is not None
+        assert len(dialogue.lookup_hash) == 64  # SHA256 hex length
 
     async def test_lookup_cached_dialogue_exact_match(self, db_manager, test_npc):
         """Looking up dialogue with exact text should return cached entry."""
@@ -58,7 +58,7 @@ class TestDialogueCaching:
         assert cached.audio_bytes == b"original_audio"
 
     async def test_lookup_cached_dialogue_normalized_match(self, db_manager, test_npc):
-        """Lookup should match despite whitespace/case differences."""
+        """Lookup should match despite whitespace differences but NOT case (case preserved for TTS)."""
         # Save with specific formatting
         await db_manager.save_generated_dialogue(
             npc_id=test_npc.id,
@@ -68,15 +68,24 @@ class TestDialogueCaching:
 
         # Lookup with different formatting but same normalized text
         test_cases = [
-            "  Hello, adventurer!  ",  # Extra whitespace
-            "HELLO, ADVENTURER!",  # Different case
-            "  HELLO, ADVENTURER!  ",  # Both
+            "  Hello, adventurer!  ",  # Extra whitespace - SHOULD match
+            "Hello,   adventurer!",  # Multiple spaces - SHOULD match (collapsed)
         ]
 
         for text in test_cases:
             cached = await db_manager.get_cached_dialogue(test_npc.id, text)
             assert cached is not None, f"Failed to match: {text!r}"
             assert cached.audio_bytes == b"cached_audio"
+
+        # Case is preserved, so these should NOT match
+        no_match_cases = [
+            "HELLO, ADVENTURER!",  # Different case
+            "hello, adventurer!",  # Different case
+        ]
+
+        for text in no_match_cases:
+            cached = await db_manager.get_cached_dialogue(test_npc.id, text)
+            assert cached is None, f"Should NOT match (case-sensitive): {text!r}"
 
     async def test_lookup_no_match_returns_none(self, db_manager, test_npc):
         """Lookup with non-existent text should return None."""
@@ -144,7 +153,7 @@ class TestDialogueCaching:
         )
 
         # Different hashes
-        assert dialogue1.source_text_hash != dialogue2.source_text_hash
+        assert dialogue1.lookup_hash != dialogue2.lookup_hash
 
         # Correct lookups
         cached1 = await db_manager.get_cached_dialogue(test_npc.id, "hello world")
