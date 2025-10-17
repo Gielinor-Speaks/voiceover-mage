@@ -158,7 +158,7 @@ class LocalTTSAdapter(TTSProvider):
             "repetition_penalty": 10.0,
             "max_mel_tokens": 1500,
             "interval_silence": 200,
-            "max_text_tokens_per_segment": 120,
+            "max_text_tokens_per_segment": 200,
         }
 
         logger.debug(f"Calling local TTS API at {self.api_url}/synthesize")
