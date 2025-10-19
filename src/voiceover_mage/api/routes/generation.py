@@ -158,7 +158,7 @@ async def speak(
     """
     try:
         service = VoiceGenerationService(db_manager)
-        result = await service.generate_speech(npc_id, request.text)
+        result = await service.generate_speech(npc_id, request.text, animation_id=request.animation_id)
 
         logger.info(
             "Speech generation complete",
@@ -278,6 +278,7 @@ async def speak(
 async def speak_audio(
     npc_id: int,
     text: str,
+    animation_id: int | None = None,
     db_manager: DatabaseManager = Depends(get_db_manager),
 ) -> Response:
     """Generate speech and return raw audio.
@@ -285,10 +286,11 @@ async def speak_audio(
     Args:
         npc_id: NPC identifier
         text: Text to synthesize
+        animation_id: Optional OSRS animation ID for emotion/tone control
         db_manager: Database manager dependency
 
     Returns:
         Raw MP3 audio response
     """
-    request = SpeakRequest(text=text)
+    request = SpeakRequest(text=text, animation_id=animation_id)
     return await speak(npc_id, request, db_manager, return_audio=True)  # type: ignore[return-value]

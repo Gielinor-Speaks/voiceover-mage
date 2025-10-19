@@ -41,7 +41,9 @@ class VoiceGenerationService:
         self.logger = get_logger(__name__)
         self.config = get_config()
 
-    async def generate_speech(self, npc_id: int, text: str) -> VoiceGenerationResult:
+    async def generate_speech(
+        self, npc_id: int, text: str, animation_id: int | None = None
+    ) -> VoiceGenerationResult:
         """Generate speech for an NPC with the following priority:
 
         1. Check cached dialogue (hash-based lookup)
@@ -53,6 +55,7 @@ class VoiceGenerationService:
         Args:
             npc_id: NPC identifier
             text: Text to synthesize
+            animation_id: Optional OSRS animation ID for emotion/tone control
 
         Returns:
             VoiceGenerationResult with audio bytes and metadata
@@ -148,6 +151,7 @@ class VoiceGenerationService:
                 text=text,
                 reference_audio_bytes=selected_preview.audio_bytes,
                 audio_format=".mp3",
+                animation_id=animation_id,
             )
         except (httpx.ConnectError, httpx.TimeoutException, ConnectionError) as e:
             # Connection/network errors - service is down or unreachable
@@ -169,6 +173,7 @@ class VoiceGenerationService:
             "voice_prompt": selected_preview.voice_prompt,
             "text_length": len(text),
             "audio_size": len(audio_bytes),
+            "animation_id": animation_id,
         }
 
         await self.db.save_generated_dialogue(

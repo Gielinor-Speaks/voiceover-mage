@@ -2,13 +2,16 @@
 # ABOUTME: Handles voice synthesis using our custom IndexTTSv2 API with reference audio samples
 
 import base64
+import json
 from typing import Any
 
 import httpx
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from .base import TTSProvider
+from voiceover_mage.services.audio.base import TTSProvider
+
+from .animation_id_to_emotion import AnimationEmotionMapper
 
 
 class LocalTTSAdapter(TTSProvider):
@@ -28,6 +31,7 @@ class LocalTTSAdapter(TTSProvider):
         """
         self.api_url = api_url.rstrip("/")
         self.client = httpx.AsyncClient(timeout=timeout)
+        self.emotion_mapper = AnimationEmotionMapper()
 
     async def clone_voice_from_sample(self, name: str, sample_bytes: bytes) -> str:
         """NOT SUPPORTED - Local TTS uses zero-shot synthesis, not persistent cloning.
@@ -72,7 +76,11 @@ class LocalTTSAdapter(TTSProvider):
         )
 
     async def generate_speech_with_reference(
-        self, text: str, reference_audio_bytes: bytes, audio_format: str = ".wav"
+        self,
+        text: str,
+        reference_audio_bytes: bytes,
+        audio_format: str = ".wav",
+        animation_id: int | None = None,
     ) -> bytes:
         """Generate speech using a reference voice sample via zero-shot synthesis.
 
@@ -80,6 +88,7 @@ class LocalTTSAdapter(TTSProvider):
             text: Text to convert to speech
             reference_audio_bytes: Raw audio data to use as voice reference
             audio_format: Format of the reference audio (e.g., '.wav', '.mp3')
+            animation_id: Optional OSRS animation ID for emotion/tone control
 
         Returns:
             bytes: WAV audio data
@@ -104,7 +113,7 @@ class LocalTTSAdapter(TTSProvider):
 
             # Call the local TTS API
             response = await self._synthesize_with_voice_sample(
-                text=text, audio_base64=audio_base64, audio_format=audio_format
+                text=text, audio_base64=audio_base64, audio_format=audio_format, animation_id=animation_id
             )
 
             # Decode the response audio
@@ -128,9 +137,54 @@ class LocalTTSAdapter(TTSProvider):
     def supports_voice_cloning(self) -> bool:
         """Return voice cloning support status."""
         return True
+    
+
+    def _get_emotion_settings(self, animation_id: int | None) -> dict[str, str | list[float] | float]:
+        """Get emotion settings based on animation ID.
+
+        Args:
+            animation_id: Optional animation ID for emotion context
+
+        Returns:
+            Dict with emotion settings for the API request
+        """
+
+        fallback_settings = {
+            "emotion_mode": "text_description",
+            # Should be 0.6 or less for best results with text_description mode
+            "emotion_weight": 0.6,
+        }
+
+        if animation_id is None:
+            logger.debug("No animation ID provided, using fallback emotion settings")
+            return fallback_settings
+
+        # Map animation ID to emotion vector
+        result = self.emotion_mapper.map_animation_to_emotion(animation_id)
+
+        if result is None:
+            logger.debug(
+                f"No emotion vector found for animation ID {animation_id}, "
+                f"falling back to text-based inference"
+            )
+            return fallback_settings
+
+        emotion_vector, source = result
+        logger.debug(
+            f"Using emotion vector for animation ID {animation_id} "
+            f"(source: {source}): {emotion_vector}"
+        )
+        return {
+            "emotion_mode": "emotion_vector",
+            "emotion_vector": emotion_vector,
+            "emotion_weight": 0.6,
+        }
+    
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _synthesize_with_voice_sample(self, text: str, audio_base64: str, audio_format: str) -> dict[str, Any]:
+    async def _synthesize_with_voice_sample(
+        self, text: str, audio_base64: str, audio_format: str, animation_id: int | None = None
+    ) -> dict[str, Any]:
         """Call the local TTS API to synthesize speech with voice reference.
 
         Uses our custom IndexTTSv2 API format.
@@ -139,6 +193,7 @@ class LocalTTSAdapter(TTSProvider):
             text: Text to synthesize
             audio_base64: Base64-encoded reference audio
             audio_format: Audio format (e.g., 'mp3', 'wav')
+            animation_id: Optional animation ID for emotion context 
 
         Returns:
             Dict containing the API response with audio_base64 and metadata
@@ -148,7 +203,6 @@ class LocalTTSAdapter(TTSProvider):
             "prompt_audio": audio_base64,
             # "audio_format": audio_format, --- This field is not used by the API ---
             "output_audio_format": "mp3",
-            "emotion_mode": "text_description",
             "do_sample": True,
             "top_p": 0.8,
             "top_k": 30,
@@ -159,9 +213,11 @@ class LocalTTSAdapter(TTSProvider):
             "max_mel_tokens": 1500,
             "interval_silence": 200,
             "max_text_tokens_per_segment": 200,
+            # Add emotion settings
+            **self._get_emotion_settings(animation_id),
         }
 
-        logger.debug(f"Calling local TTS API at {self.api_url}/synthesize")
+        logger.debug(f"Calling local TTS API at {self.api_url}/synthesize...")
 
         response = await self.client.post(
             f"{self.api_url}/synthesize", json=payload, headers={"Content-Type": "application/json"}

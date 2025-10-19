@@ -14,6 +14,11 @@ class SpeakRequest(BaseModel):
         max_length=5000,
         examples=["Hello, adventurer! What brings you to my shop today?"],
     )
+    animation_id: int | None = Field(
+        None,
+        description="Optional OSRS animation ID to determine emotion/tone for speech synthesis",
+        examples=[588, 589, 590],
+    )
 
 
 class SpeakResponse(BaseModel):
