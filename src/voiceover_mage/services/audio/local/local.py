@@ -149,36 +149,64 @@ class LocalTTSAdapter(TTSProvider):
             Dict with emotion settings for the API request
         """
 
-        fallback_settings = {
+        # INTENTIONAL EARLY RETURN: Force text_description mode to avoid emotion vector corruption
+        #
+        # The IndexTTS API applies bias factors and sum constraints to emotion vectors that
+        # distort our carefully designed emotion ratios:
+        #
+        # 1. Bias application: Each emotion dimension is multiplied by a bias factor to
+        #    "de-emphasize emotions that cause strange results":
+        #    - happy: ×0.9375, angry: ×0.875, sad: ×1.0, afraid: ×1.0
+        #    - disgusted: ×0.9375, melancholic: ×0.9375, surprised: ×0.6875, calm: ×0.5625
+        #
+        # 2. Sum constraint: After bias, the vector sum must be ≤ 0.8. If exceeded, the entire
+        #    vector is scaled down proportionally.
+        #
+        # Problem: Our emotion vectors (e.g., LAUGHING = 70% happy + 30% surprised) become
+        # distorted after bias application (becomes 76% happy + 24% surprised), destroying
+        # the intended emotional expression and causing inconsistent pacing.
+        #
+        # Solution: Use text_description mode, which:
+        # - Infers emotion from the dialogue text using the Qwen emotion model
+        # - Bypasses bias factors and normalization constraints
+        # - Produces consistent, natural pacing (verified to fix pacing issues)
+        # - Works well for short NPC dialogue phrases
+        #
+        # Future improvement: Consider mapping animation_id → emotion text descriptions
+        # for explicit control without vector normalization issues.
+        #
+        # See: indextts/infer_v2.py:323 (normalize_emo_vec) and api.py:179 (normalize_emotion_vector)
+        # fallback_settings = {
+        return {
             "emotion_mode": "text_description",
             # Should be 0.6 or less for best results with text_description mode
             "emotion_weight": 0.6,
         }
 
-        if animation_id is None:
-            logger.debug("No animation ID provided, using fallback emotion settings")
-            return fallback_settings
+        # if animation_id is None:
+        #     logger.debug("No animation ID provided, using fallback emotion settings")
+        #     return fallback_settings
 
-        # Map animation ID to emotion vector
-        result = self.emotion_mapper.map_animation_to_emotion(animation_id)
+        # # Map animation ID to emotion vector
+        # result = self.emotion_mapper.map_animation_to_emotion(animation_id)
 
-        if result is None:
-            logger.debug(
-                f"No emotion vector found for animation ID {animation_id}, "
-                f"falling back to text-based inference"
-            )
-            return fallback_settings
+        # if result is None:
+        #     logger.debug(
+        #         f"No emotion vector found for animation ID {animation_id}, "
+        #         f"falling back to text-based inference"
+        #     )
+        #     return fallback_settings
 
-        emotion_vector, source = result
-        logger.debug(
-            f"Using emotion vector for animation ID {animation_id} "
-            f"(source: {source}): {emotion_vector}"
-        )
-        return {
-            "emotion_mode": "emotion_vector",
-            "emotion_vector": emotion_vector,
-            "emotion_weight": 0.6,
-        }
+        # emotion_vector, source = result
+        # logger.debug(
+        #     f"Using emotion vector for animation ID {animation_id} "
+        #     f"(source: {source}): {emotion_vector}"
+        # )
+        # return {
+        #     "emotion_mode": "emotion_vector",
+        #     "emotion_vector": emotion_vector,
+        #     "emotion_weight": 0.6,
+        # }
     
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
