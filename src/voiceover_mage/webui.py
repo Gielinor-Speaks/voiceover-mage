@@ -15,8 +15,14 @@ from sqlalchemy import and_, select
 
 from voiceover_mage.config import get_config
 from voiceover_mage.persistence.manager import DatabaseManager
-from voiceover_mage.persistence.models import CharacterProfile, GeneratedDialogue, NPC, VoicePreview, WikiSnapshot
-
+from voiceover_mage.persistence.models import (
+    NPC,
+    CharacterProfile,
+    GeneratedDialogue,
+    VoicePreview,
+    WikiSnapshot,
+)
+from voiceover_mage.utils.profile_display import render_character_profile_html
 
 # ==========================================================================================
 # Helper Functions
@@ -52,13 +58,13 @@ async def fetch_wiki_html(wiki_url: str) -> str:
 
                 def handle_starttag(self, tag, attrs):
                     attrs_dict = dict(attrs)
-                    if tag == 'div' and attrs_dict.get('id') == 'content':
+                    if tag == "div" and attrs_dict.get("id") == "content":
                         self.in_content = True
                         self.depth = 1
                     elif self.in_content:
                         self.depth += 1
-                        attrs_str = ' '.join([f'{k}="{v}"' for k, v in attrs])
-                        self.content_html.append(f'<{tag} {attrs_str}>')
+                        attrs_str = " ".join([f'{k}="{v}"' for k, v in attrs])
+                        self.content_html.append(f"<{tag} {attrs_str}>")
 
                 def handle_endtag(self, tag):
                     if self.in_content:
@@ -66,7 +72,7 @@ async def fetch_wiki_html(wiki_url: str) -> str:
                         if self.depth == 0:
                             self.in_content = False
                         else:
-                            self.content_html.append(f'</{tag}>')
+                            self.content_html.append(f"</{tag}>")
 
                 def handle_data(self, data):
                     if self.in_content and self.depth > 1:
@@ -74,7 +80,7 @@ async def fetch_wiki_html(wiki_url: str) -> str:
 
             parser = ContentExtractor()
             parser.feed(html)
-            content = ''.join(parser.content_html)
+            content = "".join(parser.content_html)
 
             # Wrap with styling (respects light/dark mode)
             styled_html = f'''
@@ -145,7 +151,7 @@ async def fetch_wiki_html(wiki_url: str) -> str:
                     </a>
                 </div>
                 <div class="wiki-content">
-                    {content if content else '<p>Could not extract main content</p>'}
+                    {content if content else "<p>Could not extract main content</p>"}
                 </div>
             </div>
             '''
@@ -263,52 +269,33 @@ async def get_npc_display_data(db: DatabaseManager, npc_id: int) -> dict[str, An
         if wiki_snapshot and wiki_snapshot.raw_markdown:
             wiki_text = wiki_snapshot.raw_markdown  # Show full markdown content
 
-        # Extract character profile data for display
+        # Extract character profile data for beautiful HTML display
         profile_display = ""
         if character_profile and character_profile.profile_json:
             profile_data = character_profile.profile_json
 
-            # Build a formatted markdown display similar to CLI
-            profile_parts = []
+            # Get image URLs from profile_json first (more reliable), then fall back to wiki_snapshot
+            chathead_url = None
+            image_url = None
 
-            # Character Overview Section
-            profile_parts.append("## 👤 Character Overview\n")
-            if profile_data.personality_traits:
-                profile_parts.append(f"**🎭 Personality:** {profile_data.personality_traits}\n")
-            if profile_data.occupation:
-                profile_parts.append(f"**💼 Occupation:** {profile_data.occupation}\n")
-            if profile_data.dialogue_patterns:
-                profile_parts.append(f"**💬 Speech Style:** {profile_data.dialogue_patterns}\n")
+            # Primary: profile_json
+            if hasattr(profile_data, "chathead_image_url"):
+                chathead_url = profile_data.chathead_image_url
+            if hasattr(profile_data, "image_url"):
+                image_url = profile_data.image_url
 
-            # Appearance Section
-            appearance_parts = []
-            if profile_data.age_category:
-                appearance_parts.append(profile_data.age_category)
-            if profile_data.build_type:
-                appearance_parts.append(profile_data.build_type)
-            if profile_data.attire_style:
-                appearance_parts.append(profile_data.attire_style)
-            if appearance_parts:
-                profile_parts.append(f"**👤 Appearance:** {', '.join(appearance_parts)}\n")
+            # Fallback: wiki_snapshot if profile_json doesn't have images
+            if not chathead_url and wiki_snapshot:
+                chathead_url = wiki_snapshot.chathead_image_url
+            if not image_url and wiki_snapshot:
+                image_url = wiki_snapshot.image_url
 
-            if profile_data.visual_archetype:
-                profile_parts.append(f"**🎨 Archetype:** {profile_data.visual_archetype}\n")
-
-            # Confidence Metrics
-            profile_parts.append("\n## 🎵 Analysis Confidence\n")
-            if profile_data.overall_confidence:
-                overall_pct = f"{profile_data.overall_confidence:.1%}"
-                profile_parts.append(f"**Overall:** {overall_pct}\n")
-            if profile_data.text_confidence:
-                text_pct = f"{profile_data.text_confidence:.1%}"
-                profile_parts.append(f"**Text Analysis:** {text_pct}\n")
-            if profile_data.visual_confidence:
-                visual_pct = f"{profile_data.visual_confidence:.1%}"
-                profile_parts.append(f"**Visual Analysis:** {visual_pct}\n")
-
-            profile_display = "".join(profile_parts)
+            # Render beautiful HTML portfolio layout
+            profile_display = render_character_profile_html(
+                profile=profile_data, chathead_url=chathead_url, image_url=image_url, npc_name=npc.name
+            )
         else:
-            profile_display = "_No character profile available_"
+            profile_display = "<p style='padding: 20px; color: #666;'>No character profile available</p>"
 
         # Process voice candidates with selection status
         candidates = []
@@ -389,8 +376,43 @@ def create_tab1_ui(db: DatabaseManager) -> dict[str, Any]:
             )
             components["npc_dropdown"] = npc_dropdown
 
-        # Wiki Data Section
-        with gr.Accordion(label="Source Wiki Data", open=False):
+        # Pipeline Flow Indicator
+        gr.HTML(
+            """
+            <div style="text-align: center; margin: 30px 0 20px 0; padding: 20px;
+                        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+                        border-radius: 10px; border: 2px solid var(--border-color-primary);">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 24px;">📖</span>
+                        <span style="font-weight: bold;">Wiki Data</span>
+                    </div>
+                    <span style="font-size: 20px; color: #667eea;">→</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 24px;">🧠</span>
+                        <span style="font-weight: bold;">AI Analysis</span>
+                    </div>
+                    <span style="font-size: 20px; color: #764ba2;">→</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 24px;">🎭</span>
+                        <span style="font-weight: bold;">Voice Design</span>
+                    </div>
+                    <span style="font-size: 20px; color: #667eea;">→</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 24px;">🎵</span>
+                        <span style="font-weight: bold;">Speech Synthesis</span>
+                    </div>
+                </div>
+            </div>
+            """
+        )
+
+        # Wiki Data Section (Collapsible)
+        with gr.Accordion(label="📖 Source: OSRS Wiki Article", open=False):
+            gr.Markdown(
+                "*This is the raw source material extracted from the OSRS Wiki. "
+                "Our AI analyzes this content to understand the character's personality, background, and traits.*"
+            )
             with gr.Tabs():
                 with gr.Tab("Wiki Page"):
                     wiki_html = gr.HTML(
@@ -404,17 +426,49 @@ def create_tab1_ui(db: DatabaseManager) -> dict[str, Any]:
                     )
                     components["wiki_markdown"] = wiki_markdown
 
-        # Character Profile Section
-        with gr.Accordion(label="Character Profile", open=True):
-            profile_markdown = gr.Markdown(
-                value="",
+        # Character Profile Section (Hero Card)
+        gr.HTML(
+            """
+            <div style="text-align: center; margin: 30px 0 15px 0;">
+                <h2 style="font-size: 28px; margin: 0; display: flex; align-items: center;
+                           justify-content: center; gap: 10px;">
+                    <span style="font-size: 32px;">🧠</span>
+                    <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                 -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                                 background-clip: text;">
+                        AI-Generated Character Profile
+                    </span>
+                </h2>
+                <p style="color: #666; margin-top: 8px; font-size: 14px;">
+                    Personality traits, vocal characteristics, and speaking style inferred from wiki content
+                </p>
+            </div>
+            """
+        )
+        with gr.Accordion(label="View Character Analysis", open=True):
+            profile_html = gr.HTML(
+                value="<p style='padding: 20px; color: #666;'>Select an NPC to view character profile...</p>",
             )
-            components["profile_markdown"] = profile_markdown
+            components["profile_html"] = profile_html
 
         # Voice Candidates Section
-        gr.Markdown(
-            "### Voice Candidates\n"
-            "Voice candidates generated by ElevenLabs Voice Design, manually curated for character appropriateness."
+        gr.HTML(
+            """
+            <div style="text-align: center; margin: 40px 0 15px 0;">
+                <h2 style="font-size: 28px; margin: 0; display: flex; align-items: center;
+                           justify-content: center; gap: 10px;">
+                    <span style="font-size: 32px;">🎭</span>
+                    <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                 -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                                 background-clip: text;">
+                        Voice Design Candidates
+                    </span>
+                </h2>
+                <p style="color: #666; margin-top: 8px; font-size: 14px;">
+                    ElevenLabs Voice Design generates multiple voice options based on character traits
+                </p>
+            </div>
+            """
         )
         with gr.Row():
             candidate1_audio = gr.Audio(label="Candidate 1", interactive=False, show_label=True)
@@ -425,11 +479,28 @@ def create_tab1_ui(db: DatabaseManager) -> dict[str, Any]:
             components["candidate3_audio"] = candidate3_audio
 
         # Dialogue Samples Section
-        gr.Markdown("### Dialogue Samples with Emotional Context")
+        gr.HTML(
+            """
+            <div style="text-align: center; margin: 40px 0 15px 0;">
+                <h2 style="font-size: 28px; margin: 0; display: flex; align-items: center;
+                           justify-content: center; gap: 10px;">
+                    <span style="font-size: 32px;">🎵</span>
+                    <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                 -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                                 background-clip: text;">
+                        Emotion-Aware Speech Synthesis
+                    </span>
+                </h2>
+                <p style="color: #666; margin-top: 8px; font-size: 14px;">
+                    Context-aware dialogue generation with dynamic emotional expression
+                </p>
+            </div>
+            """
+        )
 
         # Create 5 sample slots (will be hidden if not used)
         dialogue_components = []
-        for i in range(5):
+        for _ in range(5):
             with gr.Row(visible=False) as sample_row:
                 with gr.Column(scale=3):
                     emotion_md = gr.Markdown("", visible=False)
@@ -512,7 +583,9 @@ def create_tab1_event_handlers(db: DatabaseManager, components: dict[str, Any], 
 
         if not npc_id:
             logger.warning(f"Could not find NPC ID for display name: {npc_display_name}")
-            return tuple([gr.update()] * (6 + 5 * 4))  # Return empty updates (3 wiki components + 3 candidates + 5*4 dialogue)
+            return tuple(
+                [gr.update()] * (6 + 5 * 4)
+            )  # Return empty updates (3 wiki components + 3 candidates + 5*4 dialogue)
 
         # Fetch display data
         data = await get_npc_display_data(db, npc_id)
@@ -568,7 +641,7 @@ def create_tab1_event_handlers(db: DatabaseManager, components: dict[str, Any], 
     outputs = [
         components["wiki_html"],
         components["wiki_markdown"],
-        components["profile_markdown"],
+        components["profile_html"],
         components["candidate1_audio"],
         components["candidate2_audio"],
         components["candidate3_audio"],
@@ -644,10 +717,7 @@ async def initialize_database(db_path: str | None = None) -> DatabaseManager:
     """Initialize database connection and verify connectivity."""
     config = get_config()
 
-    if db_path:
-        db_url = f"sqlite+aiosqlite:///{db_path}"
-    else:
-        db_url = config.database_url
+    db_url = f"sqlite+aiosqlite:///{db_path}" if db_path else config.database_url
 
     logger.info(f"Connecting to database: {db_url}")
 
