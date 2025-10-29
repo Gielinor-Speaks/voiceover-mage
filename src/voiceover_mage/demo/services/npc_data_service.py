@@ -24,7 +24,9 @@ from voiceover_mage.persistence.models import (
 
 async def get_available_npcs(db: DatabaseManager) -> list[dict[str, Any]]:
     """
-    Query NPCs with complete voice profiles suitable for demonstration.
+    Query NPCs with complete voice profiles suitable for Tab 1 demonstration.
+
+    Requires: wiki snapshot, character profile, selected voice, AND dialogue samples.
 
     Returns list of dicts with 'id', 'name', and 'display_name' (name + variant if present).
     """
@@ -61,6 +63,40 @@ async def get_available_npcs(db: DatabaseManager) -> list[dict[str, Any]]:
                 if npc.variant:
                     display_name = f"{npc.name} ({npc.variant})"
                 npc_list.append({"id": npc.id, "name": npc.name, "display_name": display_name})
+
+        # Sort alphabetically by display name
+        npc_list.sort(key=lambda x: x["display_name"])
+        return npc_list
+
+
+async def get_npcs_with_voices(db: DatabaseManager) -> list[dict[str, Any]]:
+    """
+    Query NPCs that have voice previews (for voice management and dialogue generation).
+
+    Less strict than get_available_npcs - only requires voices, not dialogue samples.
+    Suitable for Tab 2 pipeline operations.
+
+    Returns list of dicts with 'id', 'name', and 'display_name' (name + variant if present).
+    """
+    async with db.async_session() as session:
+        # Query NPCs with voice previews
+        # - Has at least one voice preview
+        # - Preferably has selected voice
+        stmt = (
+            select(NPC)
+            .join(VoicePreview, VoicePreview.npc_id == NPC.id)
+            .distinct()
+        )
+
+        result = await session.execute(stmt)
+        npcs = result.scalars().unique().all()
+
+        npc_list = []
+        for npc in npcs:
+            display_name = npc.name
+            if npc.variant:
+                display_name = f"{npc.name} ({npc.variant})"
+            npc_list.append({"id": npc.id, "name": npc.name, "display_name": display_name})
 
         # Sort alphabetically by display name
         npc_list.sort(key=lambda x: x["display_name"])
@@ -117,6 +153,28 @@ async def get_npc_display_data(db: DatabaseManager, npc_id: int) -> dict[str, An
             "voice_previews": voice_previews,
             "dialogue_samples": dialogue_samples,
         }
+
+
+async def get_all_npcs_for_pipeline(db: DatabaseManager) -> list[dict[str, Any]]:
+    """
+    Query ALL NPCs that exist in the database (for pipeline selection).
+
+    Returns list of dicts with 'id', 'name', and 'display_name' (name + variant if present).
+    Sorted alphabetically.
+    """
+    async with db.async_session() as session:
+        stmt = select(NPC).order_by(NPC.name)
+        result = await session.execute(stmt)
+        npcs = result.scalars().all()
+
+        npc_list = []
+        for npc in npcs:
+            display_name = npc.name
+            if npc.variant:
+                display_name = f"{npc.name} ({npc.variant})"
+            npc_list.append({"id": npc.id, "name": npc.name, "display_name": display_name})
+
+        return npc_list
 
 
 async def find_npc_id_by_display_name(db: DatabaseManager, display_name: str) -> int | None:
