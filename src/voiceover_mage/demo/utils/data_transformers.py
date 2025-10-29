@@ -103,13 +103,9 @@ def transform_character_profile_to_html(
     profile_data = character_profile.profile_json
 
     # Get image URLs from wiki_snapshot (NPCDetails doesn't have image URL fields)
-    chathead_url = None
-    image_url = None
-
-    if wiki_snapshot:
-        chathead_url = wiki_snapshot.chathead_image_url
-        image_url = wiki_snapshot.image_url
-
+    chathead_url = profile_data.chathead_image_url
+    image_url = profile_data.image_url
+    
     # Render beautiful HTML portfolio layout
     return render_character_profile_html(
         profile=profile_data, chathead_url=chathead_url, image_url=image_url, npc_name=npc_name

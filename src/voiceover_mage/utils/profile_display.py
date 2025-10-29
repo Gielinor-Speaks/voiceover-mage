@@ -132,7 +132,7 @@ def render_character_profile_html(
             hero_images_html += f"""
             <div class='hero-image-card chathead'>
                 <img src="{chathead_url}" alt="{display_name} chathead" loading="lazy">
-                <div class='image-label'>Chathead</div>
+                <div class='image-label'>Character Chathead Model</div>
             </div>
             """
 
@@ -140,7 +140,7 @@ def render_character_profile_html(
             hero_images_html += f"""
             <div class='hero-image-card character'>
                 <img src="{image_url}" alt="{display_name}" loading="lazy">
-                <div class='image-label'>Character Sprite</div>
+                <div class='image-label'>Character Full Model</div>
             </div>
             """
 
