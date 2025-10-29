@@ -28,7 +28,7 @@ async def get_pipeline_status(db: DatabaseManager, npc_id: int) -> dict[str, Any
     async with db.async_session() as session:
         # Check if NPC exists
         npc_stmt = select(NPC).where(NPC.id == npc_id)
-        npc_result = await session.execute(npc_stmt)
+        npc_result = await session.exec(npc_stmt)
         npc = npc_result.scalar_one_or_none()
 
         if not npc:
@@ -48,17 +48,17 @@ async def get_pipeline_status(db: DatabaseManager, npc_id: int) -> dict[str, Any
 
         # Check wiki snapshot
         wiki_stmt = select(WikiSnapshot).where(WikiSnapshot.npc_id == npc_id)
-        wiki_result = await session.execute(wiki_stmt)
+        wiki_result = await session.exec(wiki_stmt)
         wiki_snapshot = wiki_result.scalar_one_or_none()
 
         # Check character profile
         profile_stmt = select(CharacterProfile).where(CharacterProfile.npc_id == npc_id)
-        profile_result = await session.execute(profile_stmt)
+        profile_result = await session.exec(profile_stmt)
         character_profile = profile_result.scalar_one_or_none()
 
         # Check voice previews
         voices_stmt = select(VoicePreview).where(VoicePreview.npc_id == npc_id)
-        voices_result = await session.execute(voices_stmt)
+        voices_result = await session.exec(voices_stmt)
         voice_previews = list(voices_result.scalars().all())
 
         # Determine status

@@ -122,7 +122,7 @@ async def regenerate_voice_candidates(
         # Check if NPC exists and has required data
         async with db.async_session() as session:
             stmt = select(NPCPipelineState).where(NPCPipelineState.id == npc_id)
-            result = await session.execute(stmt)
+            result = await session.exec(stmt)
             state = result.scalar_one_or_none()
 
             if not state or not state.character_profile_entry:
@@ -181,7 +181,7 @@ async def select_voice_candidate(db: DatabaseManager, npc_id: int, preview_id: i
             preview_stmt = select(VoicePreview).where(
                 VoicePreview.id == preview_id, VoicePreview.npc_id == npc_id
             )
-            preview_result = await session.execute(preview_stmt)
+            preview_result = await session.exec(preview_stmt)
             preview = preview_result.scalar_one_or_none()
 
             if not preview:
@@ -242,7 +242,7 @@ async def generate_dialogue(
         async with db.async_session() as session:
             # Get NPC and selected voice
             npc_stmt = select(NPC).where(NPC.id == npc_id)
-            npc_result = await session.execute(npc_stmt)
+            npc_result = await session.exec(npc_stmt)
             npc = npc_result.scalar_one_or_none()
 
             if not npc or not npc.selected_preview_id:
@@ -250,7 +250,7 @@ async def generate_dialogue(
 
             # Get selected voice preview
             preview_stmt = select(VoicePreview).where(VoicePreview.id == npc.selected_preview_id)
-            preview_result = await session.execute(preview_stmt)
+            preview_result = await session.exec(preview_stmt)
             preview = preview_result.scalar_one_or_none()
 
             if not preview or not preview.audio_bytes:

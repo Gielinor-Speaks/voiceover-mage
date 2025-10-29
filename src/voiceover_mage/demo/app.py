@@ -55,7 +55,7 @@ async def initialize_database(db_path: str | None = None) -> DatabaseManager:
     # Test connectivity
     try:
         async with db.async_session() as session:
-            result = await session.execute(select(NPC).limit(1))
+            result = await session.exec(select(NPC).limit(1))
             result.scalar_one_or_none()
         logger.info("Database connection verified")
     except Exception as e:
