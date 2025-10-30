@@ -139,12 +139,13 @@ async def handle_check_status(
             )
         else:
             # No voices yet, don't show voice section
+            # Return npc_id even if NPC doesn't exist yet - needed for "Run Full Pipeline" button
             return (
                 status_html,
                 gr.update(visible=True),  # Show action buttons
                 gr.update(visible=False),  # Hide voice section
                 _empty_voice_cards(),
-                npc_id if status["exists"] else None,
+                npc_id,  # Always return the npc_id so Run Full Pipeline can work
                 status.get("npc_name"),
             )
 
@@ -209,7 +210,7 @@ async def handle_create_voice(
     npc_input: str | None,
     db: DatabaseManager,
     progress=gr.Progress(),
-) -> tuple[str, str, gr.update, gr.update, Any, Any, Any, int | None, str | None]:
+) -> tuple[str, str, gr.update, gr.update, gr.update, list[Any], int | None, str | None]:
     """
     Handle voice creation for a character (new or existing).
 
@@ -218,21 +219,29 @@ async def handle_create_voice(
     - results_html
     - results_accordion visibility
     - voice_section visibility
-    - voice_candidate_1 audio
-    - voice_candidate_2 audio
-    - voice_candidate_3 audio
+    - pipeline_progress_html (live progress indicator)
+    - voice_card_updates: list of updates for all 12 voice cards (column visibility and audio)
     - hidden_npc_id state
     - hidden_npc_name state
     """
+    # Helper to create empty voice card updates (hide all 12 cards)
+    def _empty_voice_cards():
+        return [
+            {
+                "column": gr.update(visible=False),
+                "audio": gr.update(value=None),
+            }
+            for i in range(12)
+        ]
+
     if not npc_input or not npc_input.strip():
         return (
             "❌ Please enter a character name or ID",
             "",
             gr.update(visible=False),
             gr.update(visible=False),
-            gr.update(value=None),
-            gr.update(value=None),
-            gr.update(value=None),
+            gr.update(visible=False),  # Hide progress
+            _empty_voice_cards(),
             None,
             None,
         )
@@ -247,15 +256,15 @@ async def handle_create_voice(
                 "",
                 gr.update(visible=False),
                 gr.update(visible=False),
-                gr.update(value=None),
-                gr.update(value=None),
-                gr.update(value=None),
+                gr.update(visible=False),  # Hide progress
+                _empty_voice_cards(),
                 None,
                 None,
             )
 
         # Progress callback
         def update_progress(pct: float, msg: str):
+            logger.info(f"Progress update: {pct*100:.0f}% - {msg}")
             progress(pct, desc=msg)
 
         # Run the pipeline
@@ -267,9 +276,8 @@ async def handle_create_voice(
                 _format_creation_result(result),
                 gr.update(visible=True, open=True),
                 gr.update(visible=False),
-                gr.update(value=None),
-                gr.update(value=None),
-                gr.update(value=None),
+                gr.update(visible=False),  # Hide progress
+                _empty_voice_cards(),
                 None,
                 None,
             )
@@ -280,24 +288,31 @@ async def handle_create_voice(
 
         voice_previews = display_data.get("voice_previews", [])
 
-        # Prepare audio updates (up to 3 voices)
-        audio_updates = []
-        for i in range(3):
+        # Prepare voice card updates (all 12 cards)
+        voice_cards_updates = []
+        for i in range(12):
             if i < len(voice_previews):
+                # Show this card with audio
                 preview = voice_previews[i]
                 audio_bytes = preview.audio_bytes  # VoicePreview is SQLModel, use attribute access
-                audio_updates.append(gr.update(value=audio_bytes))
+                voice_cards_updates.append({
+                    "column": gr.update(visible=True),
+                    "audio": gr.update(value=audio_bytes),
+                })
             else:
-                audio_updates.append(gr.update(value=None))
+                # Hide this card
+                voice_cards_updates.append({
+                    "column": gr.update(visible=False),
+                    "audio": gr.update(value=None),
+                })
 
         return (
             f"✅ Successfully created voice for {npc_name}!",
             _format_creation_result(result),
             gr.update(visible=True, open=True),
             gr.update(visible=True),  # Show voice section
-            audio_updates[0],
-            audio_updates[1],
-            audio_updates[2],
+            gr.update(visible=False),  # Hide progress after completion
+            voice_cards_updates,
             npc_id,
             npc_name,
         )
@@ -309,9 +324,8 @@ async def handle_create_voice(
             _format_creation_result({"success": False, "error": str(e)}),
             gr.update(visible=True, open=True),
             gr.update(visible=False),
-            gr.update(value=None),
-            gr.update(value=None),
-            gr.update(value=None),
+            gr.update(visible=False),  # Hide progress
+            _empty_voice_cards(),
             None,
             None,
         )

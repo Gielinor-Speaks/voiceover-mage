@@ -13,23 +13,21 @@ from .synthesizer import DetailSynthesizer, NPCDetails
 from .text import TextDetailExtractor
 
 
-def _configure_dspy_global_state():
-    """Configure DSPy global state with Gemini LLM.
+def _get_dspy_lm():
+    """Get configured DSPy LM instance.
 
-    Note: This intentionally modifies global DSPy state as required by DSPy architecture.
-    DSPy modules require global LM configuration to function properly.
+    Returns the LM to be used with dspy.context() for async-safe usage.
     """
     logger = get_logger(__name__)
     config = get_config()
 
     if config.gemini_api_key:
         lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
-        dspy.configure(lm=lm)
-        logger.info("Configured DSPy with Gemini for intelligent extraction")
-        return True
+        logger.info("Created DSPy LM with Gemini for intelligent extraction")
+        return lm
     else:
         logger.warning("No Gemini API key found - DSPy modules may fail")
-        return False
+        return None
 
 
 class NPCIntelligentExtractor(dspy.Module):
@@ -49,8 +47,8 @@ class NPCIntelligentExtractor(dspy.Module):
         super().__init__()
         self.logger = get_logger(__name__)
 
-        # Configure DSPy global state (explicit global side effect)
-        self._dspy_configured = _configure_dspy_global_state()
+        # Get DSPy LM instance for async-safe context usage
+        self._dspy_lm = _get_dspy_lm()
 
         self.text_extractor = TextDetailExtractor()
         self.image_extractor = ImageDetailExtractor()
@@ -75,6 +73,8 @@ class NPCIntelligentExtractor(dspy.Module):
         This eliminates run_in_executor by using DSPy's native async support
         and runs text/image analysis in parallel for maximum performance.
 
+        Uses dspy.context() for async-safe LM configuration.
+
         Args:
             raw_extraction: Phase 1 raw markdown and basic image URLs
 
@@ -83,31 +83,33 @@ class NPCIntelligentExtractor(dspy.Module):
         """
         import asyncio
 
-        # Run text and image extraction in parallel using asyncio.gather()
-        # This is true concurrency, not thread-based like run_in_executor
-        async def run_text_extraction():
-            return await self.text_extractor.aforward(
-                markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+        # Use dspy.context() for async-safe LM configuration
+        with dspy.context(lm=self._dspy_lm):
+            # Run text and image extraction in parallel using asyncio.gather()
+            # This is true concurrency, not thread-based like run_in_executor
+            async def run_text_extraction():
+                return await self.text_extractor.aforward(
+                    markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+                )
+
+            async def run_image_extraction():
+                return await self.image_extractor.aforward(
+                    markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+                )
+
+            # Await both extractions in parallel - much faster than sequential
+            text_characteristics, image_characteristics = await asyncio.gather(
+                run_text_extraction(), run_image_extraction()
             )
 
-        async def run_image_extraction():
-            return await self.image_extractor.aforward(
-                markdown_content=raw_extraction.raw_markdown, npc_name=raw_extraction.npc_name
+            # Synthesize the results into unified profile
+            npc_details = await self.synthesizer.aforward(
+                text_characteristics=text_characteristics,
+                visual_characteristics=image_characteristics,
+                npc_name=raw_extraction.npc_name,
             )
 
-        # Await both extractions in parallel - much faster than sequential
-        text_characteristics, image_characteristics = await asyncio.gather(
-            run_text_extraction(), run_image_extraction()
-        )
-
-        # Synthesize the results into unified profile
-        npc_details = await self.synthesizer.aforward(
-            text_characteristics=text_characteristics,
-            visual_characteristics=image_characteristics,
-            npc_name=raw_extraction.npc_name,
-        )
-
-        return npc_details
+            return npc_details
 
     async def extract_async(self, raw_extraction: NPCPipelineState) -> NPCDetails:
         """Legacy async method - now delegates to aforward for compatibility."""

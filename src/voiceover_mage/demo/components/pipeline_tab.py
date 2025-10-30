@@ -122,6 +122,14 @@ def create_pipeline_tab() -> dict[str, Any]:
 
         components["action_buttons_row"] = action_buttons_row
 
+        # Live pipeline progress indicator (shown during execution)
+        pipeline_progress_html = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes="pipeline-progress"
+        )
+        components["pipeline_progress_html"] = pipeline_progress_html
+
         # Results accordion (hidden by default)
         with gr.Accordion("📊 Execution Results", open=False, visible=False) as results_accordion:
             results_html = gr.HTML()

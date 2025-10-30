@@ -165,6 +165,11 @@ def create_interface(db: DatabaseManager) -> gr.Blocks:
         border-color: rgba(156, 163, 175, 0.3) !important;
     }
 
+    /* Pipeline progress indicator */
+    .pipeline-progress {
+        margin: 16px 0 !important;
+    }
+
     /* ============================================
        CHARACTER SELECTOR IMPROVEMENTS
        ============================================ */
@@ -435,26 +440,38 @@ def _setup_pipeline_event_handlers(db: DatabaseManager, components: dict, demo: 
     # Run full pipeline button
     async def on_run_full(npc_id, progress=gr.Progress()):
         if not npc_id:
-            return ("", gr.update(visible=False), gr.update(visible=False),
-                    None, None, None, None, None)
+            # Return empty updates for all components
+            empty_cards = [gr.update(visible=False), gr.update(value=None)] * 12
+            return ("", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)) + tuple(empty_cards) + (None, None)
+
         result = await handle_create_voice(str(npc_id), db, progress)
-        # Skip the first return value (status_text) since we removed it from UI
-        _status, *rest = result
-        return tuple(rest)
+        # Unpack: status_text, results_html, results_accordion, voice_section, pipeline_progress_html, voice_cards_updates, npc_id, npc_name
+        _status, results_html, results_accordion, voice_section, pipeline_progress_html, voice_cards_updates, npc_id_out, npc_name = result
+
+        # Flatten voice_cards_updates into individual column and audio updates
+        flattened = [results_html, results_accordion, voice_section, pipeline_progress_html]
+        for card_update in voice_cards_updates:
+            flattened.append(card_update["column"])
+            flattened.append(card_update["audio"])
+        flattened.extend([npc_id_out, npc_name])
+
+        return tuple(flattened)
+
+    # Build outputs list: results_html, results_accordion, voice_section, pipeline_progress_html, then all 12 cards (column + audio each), then states
+    run_full_outputs = [
+        components["results_html"],
+        components["results_accordion"],
+        components["voice_section"],
+        components["pipeline_progress_html"],
+    ]
+    for card in components["voice_candidates"]:
+        run_full_outputs.extend([card["column"], card["audio"]])
+    run_full_outputs.extend([components["hidden_npc_id"], components["hidden_npc_name"]])
 
     components["run_full_btn"].click(
         fn=on_run_full,
         inputs=[components["hidden_npc_id"]],
-        outputs=[
-            components["results_html"],
-            components["results_accordion"],
-            components["voice_section"],
-            components["voice_candidates"][0]["audio"],
-            components["voice_candidates"][1]["audio"],
-            components["voice_candidates"][2]["audio"],
-            components["hidden_npc_id"],
-            components["hidden_npc_name"],
-        ],
+        outputs=run_full_outputs,
     )
 
     # TODO: Wire up other action buttons (regen_wiki_btn, regen_profile_btn, regen_voices_btn_top)

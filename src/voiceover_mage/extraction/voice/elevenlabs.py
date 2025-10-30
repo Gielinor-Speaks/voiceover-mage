@@ -122,13 +122,23 @@ class ElevenLabsVoicePromptGenerator(dspy.Module):
         # Keep constructor minimal; prompt instructions can be managed via settings if needed.
         self.generator = dspy.ChainOfThought(ElevenLabsPromptSignature.with_instructions(ELEVENLABS_INSTRUCTIONS))
 
+        # Get DSPy LM instance for async-safe context usage
+        from voiceover_mage.config import get_config
+        config = get_config()
+        if config.gemini_api_key:
+            self._dspy_lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
+        else:
+            self._dspy_lm = None
+
     async def aforward(self, npc_profile: NPCProfile) -> dict[str, str]:
         """Asynchronously generates and returns only the voice description string.
 
         Kept minimal to satisfy existing tests that expect a string result.
+        Uses dspy.context() for async-safe LM configuration.
         """
-        result = await self.generator.acall(npc_profile=npc_profile)
-        return {
-            "description": result.voice_description,
-            "sample_text": result.sample_text,
-        }
+        with dspy.context(lm=self._dspy_lm):
+            result = await self.generator.acall(npc_profile=npc_profile)
+            return {
+                "description": result.voice_description,
+                "sample_text": result.sample_text,
+            }

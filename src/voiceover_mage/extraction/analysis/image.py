@@ -117,12 +117,12 @@ class ImageDetailExtractor(dspy.Module):
     def __init__(self, http_client: httpx.AsyncClient | None = None):
         super().__init__()
 
-        # Configure DSPy with Gemini for vision capabilities
+        # Get DSPy LM instance for async-safe context usage
         config = get_config()
         if config.gemini_api_key:
-            # Configure DSPy to use Gemini Pro Vision
-            lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
-            dspy.configure(lm=lm)
+            self._dspy_lm = dspy.LM("gemini/gemini-2.5-flash", api_key=config.gemini_api_key, adapter=dspy.JSONAdapter())
+        else:
+            self._dspy_lm = None
 
         self.identify_images = dspy.ChainOfThought(ImageIdentificationSignature)
         self.analyze_visuals = dspy.ChainOfThought(VisualAnalysisSignature)
@@ -151,6 +151,8 @@ class ImageDetailExtractor(dspy.Module):
     ) -> NPCVisualCharacteristics:
         """Async version of forward for native DSPy async support.
 
+        Uses dspy.context() for async-safe LM configuration.
+
         Args:
             markdown_content: Raw markdown content from wiki page
             npc_name: Name of the NPC to extract images for
@@ -159,71 +161,73 @@ class ImageDetailExtractor(dspy.Module):
         Returns:
             NPCVisualCharacteristics with URLs, visual traits, and confidence
         """
-        # Prepare variant for DSPy (convert None to "None" string)
-        variant_str = npc_variant or "None"
+        # Use dspy.context() for async-safe LM configuration
+        with dspy.context(lm=self._dspy_lm):
+            # Prepare variant for DSPy (convert None to "None" string)
+            variant_str = npc_variant or "None"
 
-        # Step 1: Identify correct images from markdown using async
-        image_id_result = await self.identify_images.acall(
-            markdown_content=markdown_content, npc_name=npc_name, npc_variant=variant_str
-        )
-        # Type annotation for DSPy result (has chathead_url, image_url attributes)
-        image_id_result = cast("ImageIdentificationSignature", image_id_result)
-
-        # Parse image URLs and handle "None" strings
-        chathead_url = None if image_id_result.chathead_url.lower() == "none" else image_id_result.chathead_url
-        image_url = None if image_id_result.image_url.lower() == "none" else image_id_result.image_url
-
-        # Step 2: Load images and analyze visual characteristics
-        try:
-            # Load images using DSPy's Image.from_url()
-            chathead_image = dspy.Image.from_url(chathead_url) if chathead_url else None
-            main_image = dspy.Image.from_url(image_url) if image_url else None
-
-            # Skip visual analysis if both images are blank
-            if not chathead_image and not main_image:
-                raise ValueError("Both chathead and main images are unavailable for visual analysis.")
-
-            # Use DSPy vision analysis with actual images using async
-            visual_result = await self.analyze_visuals.acall(
-                npc_name=npc_name, npc_variant=variant_str, chathead_image=chathead_image, main_image=main_image
+            # Step 1: Identify correct images from markdown using async
+            image_id_result = await self.identify_images.acall(
+                markdown_content=markdown_content, npc_name=npc_name, npc_variant=variant_str
             )
-            # Type annotation for DSPy result (has age_category, build_type, etc. attributes)
-            visual_result = cast("VisualAnalysisSignature", visual_result)
+            # Type annotation for DSPy result (has chathead_url, image_url attributes)
+            image_id_result = cast("ImageIdentificationSignature", image_id_result)
 
-        except Exception as e:
-            # Fallback if image loading fails
-            self.logger.warning(f"Failed to load images for visual analysis: {e}")
-            # Create minimal placeholder response
-            visual_result = type(
-                "obj",
-                (object,),
-                {
-                    "age_category": "unknown",
-                    "build_type": "unknown",
-                    "attire_style": "unknown attire",
-                    "distinctive_features": "unable to determine features",
-                    "color_palette": "unknown colors",
-                    "visual_archetype": "unknown",
-                    "confidence": 0.0,
-                    "reasoning": f"Image loading failed: {e}",
-                },
-            )()  # Instantiate the class
-            # Type annotation for fallback result
-            visual_result = cast("VisualAnalysisSignature", visual_result)
+            # Parse image URLs and handle "None" strings
+            chathead_url = None if image_id_result.chathead_url.lower() == "none" else image_id_result.chathead_url
+            image_url = None if image_id_result.image_url.lower() == "none" else image_id_result.image_url
 
-        # Combine confidence scores (weighted average)
-        combined_confidence = image_id_result.confidence * 0.3 + visual_result.confidence * 0.7
-        combined_reasoning = f"Image ID: {image_id_result.reasoning} | Visual Analysis: {visual_result.reasoning}"
+            # Step 2: Load images and analyze visual characteristics
+            try:
+                # Load images using DSPy's Image.from_url()
+                chathead_image = dspy.Image.from_url(chathead_url) if chathead_url else None
+                main_image = dspy.Image.from_url(image_url) if image_url else None
 
-        return NPCVisualCharacteristics(
-            chathead_image_url=chathead_url,
-            image_url=image_url,
-            age_category=visual_result.age_category,
-            build_type=visual_result.build_type,
-            attire_style=visual_result.attire_style,
-            distinctive_features=visual_result.distinctive_features,
-            color_palette=visual_result.color_palette,
-            visual_archetype=visual_result.visual_archetype,
-            confidence_score=float(combined_confidence),
-            reasoning=combined_reasoning,
-        )
+                # Skip visual analysis if both images are blank
+                if not chathead_image and not main_image:
+                    raise ValueError("Both chathead and main images are unavailable for visual analysis.")
+
+                # Use DSPy vision analysis with actual images using async
+                visual_result = await self.analyze_visuals.acall(
+                    npc_name=npc_name, npc_variant=variant_str, chathead_image=chathead_image, main_image=main_image
+                )
+                # Type annotation for DSPy result (has age_category, build_type, etc. attributes)
+                visual_result = cast("VisualAnalysisSignature", visual_result)
+
+            except Exception as e:
+                # Fallback if image loading fails
+                self.logger.warning(f"Failed to load images for visual analysis: {e}")
+                # Create minimal placeholder response
+                visual_result = type(
+                    "obj",
+                    (object,),
+                    {
+                        "age_category": "unknown",
+                        "build_type": "unknown",
+                        "attire_style": "unknown attire",
+                        "distinctive_features": "unable to determine features",
+                        "color_palette": "unknown colors",
+                        "visual_archetype": "unknown",
+                        "confidence": 0.0,
+                        "reasoning": f"Image loading failed: {e}",
+                    },
+                )()  # Instantiate the class
+                # Type annotation for fallback result
+                visual_result = cast("VisualAnalysisSignature", visual_result)
+
+            # Combine confidence scores (weighted average)
+            combined_confidence = image_id_result.confidence * 0.3 + visual_result.confidence * 0.7
+            combined_reasoning = f"Image ID: {image_id_result.reasoning} | Visual Analysis: {visual_result.reasoning}"
+
+            return NPCVisualCharacteristics(
+                chathead_image_url=chathead_url,
+                image_url=image_url,
+                age_category=visual_result.age_category,
+                build_type=visual_result.build_type,
+                attire_style=visual_result.attire_style,
+                distinctive_features=visual_result.distinctive_features,
+                color_palette=visual_result.color_palette,
+                visual_archetype=visual_result.visual_archetype,
+                confidence_score=float(combined_confidence),
+                reasoning=combined_reasoning,
+            )
