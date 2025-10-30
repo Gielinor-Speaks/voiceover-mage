@@ -32,9 +32,39 @@ USER app
 RUN uv run playwright install chromium
 CMD ["bash"]
 
-# 🚀 Production - Lean runtime with only essentials  
+# 🚀 Production - Lean runtime with only essentials
 FROM base AS prod
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 USER app
 EXPOSE 8000
 CMD ["uv", "run", "app"]
+
+# 🎙️ API - API server for voice generation
+FROM base AS api
+RUN apt-get update && apt-get install -y \
+    wget curl ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 \
+    libatk1.0-0 libatspi2.0-0 libcups2 libdrm2 libgtk-3-0 libgtk-4-1 \
+    libnspr4 libnss3 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+    libxss1 fonts-unifont \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev \
+    && chown -R app:app /app/.venv
+USER app
+RUN uv run playwright install chromium
+EXPOSE 8002
+CMD ["uv", "run", "uvicorn", "voiceover_mage.api.main:app", "--host", "0.0.0.0", "--port", "8002"]
+
+# 🎨 Demo - Gradio web interface
+FROM base AS demo
+RUN apt-get update && apt-get install -y \
+    wget curl ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 \
+    libatk1.0-0 libatspi2.0-0 libcups2 libdrm2 libgtk-3-0 libgtk-4-1 \
+    libnspr4 libnss3 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+    libxss1 fonts-unifont \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev \
+    && chown -R app:app /app/.venv
+USER app
+RUN uv run playwright install chromium
+EXPOSE 7860
+CMD ["uv", "run", "python", "-m", "voiceover_mage.demo.app", "--host", "0.0.0.0", "--port", "7860"]

@@ -1,6 +1,7 @@
+# Voiceover Mage - Local Development Services
 services:
   # 🔧 Development environment
-  voiceover-mage:
+  voiceover-mage-dev:
     build:
       context: .
       target: dev
@@ -9,6 +10,10 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
     stdin_open: true
     tty: true
     develop:
@@ -22,11 +27,16 @@ services:
         - action: rebuild
           path: ./uv.lock
 
-  # 🚀 Production environment  
+  # 🚀 Production environment
   voiceover-mage-prod:
     build:
       context: .
       target: prod
     container_name: voiceover-mage-prod
     ports: ["8001:8000"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
     profiles: ["prod"]
