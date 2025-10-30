@@ -81,6 +81,22 @@ class LocalTTSAdapter(TTSProvider):
         reference_audio_bytes: bytes,
         audio_format: str = ".wav",
         animation_id: int | None = None,
+        # Optional generation parameters (will override defaults)
+        do_sample: bool | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        temperature: float | None = None,
+        length_penalty: float | None = None,
+        num_beams: int | None = None,
+        repetition_penalty: float | None = None,
+        max_mel_tokens: int | None = None,
+        interval_silence: int | None = None,
+        max_text_tokens_per_segment: int | None = None,
+        # Optional emotion control (will override animation_id-based emotion)
+        emotion_mode: str | None = None,
+        emotion_vector: list[float] | None = None,
+        emotion_weight: float | None = None,
+        emotion_prompt_text: str | None = None,
     ) -> bytes:
         """Generate speech using a reference voice sample via zero-shot synthesis.
 
@@ -111,9 +127,44 @@ class LocalTTSAdapter(TTSProvider):
             # Encode the audio bytes for API transmission
             audio_base64 = base64.b64encode(reference_audio_bytes).decode("utf-8")
 
+            # Build kwargs for optional parameters
+            kwargs = {}
+            if do_sample is not None:
+                kwargs["do_sample"] = do_sample
+            if top_p is not None:
+                kwargs["top_p"] = top_p
+            if top_k is not None:
+                kwargs["top_k"] = top_k
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            if length_penalty is not None:
+                kwargs["length_penalty"] = length_penalty
+            if num_beams is not None:
+                kwargs["num_beams"] = num_beams
+            if repetition_penalty is not None:
+                kwargs["repetition_penalty"] = repetition_penalty
+            if max_mel_tokens is not None:
+                kwargs["max_mel_tokens"] = max_mel_tokens
+            if interval_silence is not None:
+                kwargs["interval_silence"] = interval_silence
+            if max_text_tokens_per_segment is not None:
+                kwargs["max_text_tokens_per_segment"] = max_text_tokens_per_segment
+            if emotion_mode is not None:
+                kwargs["emotion_mode"] = emotion_mode
+            if emotion_vector is not None:
+                kwargs["emotion_vector"] = emotion_vector
+            if emotion_weight is not None:
+                kwargs["emotion_weight"] = emotion_weight
+            if emotion_prompt_text is not None:
+                kwargs["emotion_prompt_text"] = emotion_prompt_text
+
             # Call the local TTS API
             response = await self._synthesize_with_voice_sample(
-                text=text, audio_base64=audio_base64, audio_format=audio_format, animation_id=animation_id
+                text=text,
+                audio_base64=audio_base64,
+                audio_format=audio_format,
+                animation_id=animation_id,
+                **kwargs,
             )
 
             # Decode the response audio
@@ -211,7 +262,12 @@ class LocalTTSAdapter(TTSProvider):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _synthesize_with_voice_sample(
-        self, text: str, audio_base64: str, audio_format: str, animation_id: int | None = None
+        self,
+        text: str,
+        audio_base64: str,
+        audio_format: str,
+        animation_id: int | None = None,
+        **generation_params: Any,
     ) -> dict[str, Any]:
         """Call the local TTS API to synthesize speech with voice reference.
 
@@ -226,24 +282,40 @@ class LocalTTSAdapter(TTSProvider):
         Returns:
             Dict containing the API response with audio_base64 and metadata
         """
+        # Start with default payload
         payload = {
             "text": text,
             "prompt_audio": audio_base64,
             # "audio_format": audio_format, --- This field is not used by the API ---
             "output_audio_format": "mp3",
-            "do_sample": True,
-            "top_p": 0.8,
-            "top_k": 30,
-            "temperature": 0.8,
-            "length_penalty": 0.0,
-            "num_beams": 3,
-            "repetition_penalty": 10.0,
-            "max_mel_tokens": 1500,
-            "interval_silence": 200,
-            "max_text_tokens_per_segment": 200,
-            # Add emotion settings
-            **self._get_emotion_settings(animation_id),
+            "do_sample": generation_params.get("do_sample", True),
+            "top_p": generation_params.get("top_p", 0.8),
+            "top_k": generation_params.get("top_k", 30),
+            "temperature": generation_params.get("temperature", 0.8),
+            "length_penalty": generation_params.get("length_penalty", 0.0),
+            "num_beams": generation_params.get("num_beams", 3),
+            "repetition_penalty": generation_params.get("repetition_penalty", 10.0),
+            "max_mel_tokens": generation_params.get("max_mel_tokens", 1500),
+            "interval_silence": generation_params.get("interval_silence", 200),
+            "max_text_tokens_per_segment": generation_params.get("max_text_tokens_per_segment", 200),
         }
+
+        # Add emotion settings - either from generation_params or animation_id
+        if "emotion_mode" in generation_params:
+            # Use explicit emotion control from parameters
+            payload["emotion_mode"] = generation_params["emotion_mode"]
+            if "emotion_weight" in generation_params:
+                payload["emotion_weight"] = generation_params["emotion_weight"]
+            if "emotion_vector" in generation_params:
+                payload["emotion_vector"] = generation_params["emotion_vector"]
+            if "emotion_prompt_text" in generation_params:
+                # For text description mode: emotion prompt text
+                # Map to the IndexTTS API field name: emotion_text
+                # If None, API will use the main text; if empty string, same behavior
+                payload["emotion_text"] = generation_params["emotion_prompt_text"]
+        else:
+            # Use default emotion settings based on animation_id
+            payload.update(self._get_emotion_settings(animation_id))
 
         logger.debug(f"Calling local TTS API at {self.api_url}/synthesize...")
 

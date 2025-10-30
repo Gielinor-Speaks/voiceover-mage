@@ -19,6 +19,7 @@ from voiceover_mage.demo.components.demo_tab import create_demo_tab
 from voiceover_mage.demo.components.event_handlers import handle_load_npcs, handle_npc_selection
 from voiceover_mage.demo.components.interactive_tab import create_interactive_tab
 from voiceover_mage.demo.components.pipeline_tab import create_pipeline_tab
+from voiceover_mage.demo.services.recording_service import RecordingService
 from voiceover_mage.demo.components.studio_handlers import (
     handle_check_status,
     handle_create_voice,
@@ -285,13 +286,14 @@ def create_interface(db: DatabaseManager) -> gr.Blocks:
             with gr.Tab("🎨 Voice Studio"):
                 pipeline_components = create_pipeline_tab()
 
-            # Tab 3: Interactive Voice Generation (placeholder)
-            with gr.Tab("🎤 Interactive (Coming Soon)"):
-                create_interactive_tab()
+            # Tab 3: Recording Studio
+            with gr.Tab("🎙️ Recording Studio"):
+                recording_components = create_interactive_tab()
 
         # Wire up event handlers
         _setup_demo_event_handlers(db, demo_components, demo)
         _setup_pipeline_event_handlers(db, pipeline_components, demo)
+        _setup_recording_event_handlers(db, recording_components, demo)
 
     return demo
 
@@ -495,6 +497,286 @@ def _setup_pipeline_event_handlers(db: DatabaseManager, components: dict, demo: 
         fn=on_regenerate,
         inputs=[components["hidden_npc_id"], components["hidden_npc_name"]],
         outputs=regenerate_outputs,
+    )
+
+
+def _setup_recording_event_handlers(db: DatabaseManager, components: dict, demo: gr.Blocks) -> None:
+    """
+    Wire up event handlers for the Recording Studio tab.
+
+    Args:
+        db: Database manager instance
+        components: Dictionary of Gradio components
+        demo: Main Gradio Blocks instance
+    """
+    config = get_config()
+    recording_service = RecordingService(db, config)
+
+    # Load NPCs with voices on startup and refresh
+    async def on_load_npcs():
+        npcs = await recording_service.get_npcs_with_voices()
+        choices = [(f"{npc['name']} (ID: {npc['id']})", npc['id']) for npc in npcs]
+        return gr.update(choices=choices, value=None)
+
+    demo.load(
+        fn=on_load_npcs,
+        inputs=[],
+        outputs=[components["npc_selector"]],
+    )
+
+    # Load animation preset choices on startup
+    def on_load_animation_presets():
+        choices = recording_service.get_animation_choices()
+        return gr.update(choices=choices)
+
+    demo.load(
+        fn=on_load_animation_presets,
+        inputs=[],
+        outputs=[components["animation_preset_selector"]],
+    )
+
+    # Update emotion control UI visibility based on mode
+    def on_emotion_mode_change(mode):
+        show_description = mode == "Text Description"
+        show_vector = mode == "Manual Control"
+        show_weight = mode != "None (Voice Default)"
+
+        return (
+            gr.update(visible=show_description),  # emotion_description_group
+            gr.update(visible=show_vector),  # emotion_vector_group
+            gr.update(visible=show_weight),  # emotion_weight_row
+        )
+
+    components["emotion_mode"].change(
+        fn=on_emotion_mode_change,
+        inputs=[components["emotion_mode"]],
+        outputs=[
+            components["emotion_description_group"],
+            components["emotion_vector_group"],
+            components["emotion_weight_row"],
+        ],
+    )
+
+    # Load animation preset into emotion sliders
+    def on_load_preset(animation_id):
+        if not animation_id:
+            return [0.0] * 8  # Return zeros for all 8 sliders
+
+        emotion_vec = recording_service.get_emotion_for_animation(animation_id)
+        if not emotion_vec:
+            return [0.0] * 8
+
+        # emotion_vec is already a list of 8 floats: [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
+        return emotion_vec
+
+    components["load_preset_btn"].click(
+        fn=on_load_preset,
+        inputs=[components["animation_preset_selector"]],
+        outputs=[
+            components["vec_happy"],
+            components["vec_angry"],
+            components["vec_sad"],
+            components["vec_afraid"],
+            components["vec_disgusted"],
+            components["vec_melancholic"],
+            components["vec_surprised"],
+            components["vec_calm"],
+        ],
+    )
+
+    # Main generation handler
+    async def on_generate(
+        npc_id,
+        text,
+        emotion_mode,
+        emotion_description,
+        vec_happy, vec_angry, vec_sad, vec_afraid,
+        vec_disgusted, vec_melancholic, vec_surprised, vec_calm,
+        emotion_weight,
+        save_to_db,
+        do_sample, temperature, top_p, top_k,
+        num_beams, repetition_penalty, length_penalty,
+        max_mel_tokens, interval_silence, max_text_tokens_per_segment,
+        progress=gr.Progress(),
+    ):
+        if not npc_id:
+            return None, "❌ Please select an NPC", gr.update(visible=False)
+
+        if not text or not text.strip():
+            return None, "❌ Please enter text to generate", gr.update(visible=False)
+
+        try:
+            progress(0, desc="Preparing generation...")
+
+            # Map emotion mode string to internal format
+            emotion_mode_map = {
+                "None (Voice Default)": "none",
+                "Text Description": "text_description",
+                "Manual Control": "emotion_vector",
+            }
+            internal_mode = emotion_mode_map.get(emotion_mode, "text_description")
+
+            # Build emotion vector if in manual control mode
+            emotion_vector = None
+            if emotion_mode == "Manual Control":
+                emotion_vector = [
+                    vec_happy, vec_angry, vec_sad, vec_afraid,
+                    vec_disgusted, vec_melancholic, vec_surprised, vec_calm
+                ]
+
+            # For text description mode, determine the prompt text
+            # If emotion_description is blank/empty, use the main text as the emotion prompt
+            emotion_prompt_text = None
+            if emotion_mode == "Text Description":
+                emotion_prompt_text = emotion_description.strip() if emotion_description and emotion_description.strip() else text
+
+            progress(0.2, desc="Generating speech...")
+
+            # Generate audio
+            audio_bytes, metadata = await recording_service.generate_speech(
+                npc_id=npc_id,
+                text=text,
+                animation_id=None,  # Animation ID not used anymore (only for preset loading)
+                emotion_mode=internal_mode,
+                emotion_vector=emotion_vector,
+                emotion_weight=emotion_weight,
+                emotion_prompt_text=emotion_prompt_text,  # Pass the emotion prompt text
+                do_sample=do_sample,
+                top_p=top_p,
+                top_k=int(top_k),
+                temperature=temperature,
+                length_penalty=length_penalty,
+                num_beams=int(num_beams),
+                repetition_penalty=repetition_penalty,
+                max_mel_tokens=int(max_mel_tokens),
+                interval_silence=int(interval_silence),
+                max_text_tokens_per_segment=int(max_text_tokens_per_segment),
+            )
+
+            progress(0.8, desc="Saving audio...")
+
+            # Save to temporary file for Gradio
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+                f.write(audio_bytes)
+                temp_path = f.name
+
+            # Optionally save to database
+            saved_id = None
+            if save_to_db:
+                progress(0.9, desc="Saving to database...")
+                saved_id = await recording_service.save_to_database(
+                    npc_id=npc_id,
+                    text=text,
+                    audio_bytes=audio_bytes,
+                    metadata=metadata,
+                )
+
+            progress(1.0, desc="Complete!")
+
+            # Format info message
+            info = f"✅ **Generated successfully!**\n\n"
+            info += f"- Audio size: {len(audio_bytes):,} bytes\n"
+            info += f"- Text length: {len(text)} characters\n"
+            info += f"- Emotion mode: {emotion_mode}\n"
+            if saved_id:
+                info += f"- Database ID: {saved_id}\n"
+
+            return temp_path, info, gr.update(visible=True)
+
+        except Exception as e:
+            logger.exception(f"Error generating speech: {e}")
+            return None, f"❌ **Error:** {str(e)}", gr.update(visible=False)
+
+    components["generate_btn"].click(
+        fn=on_generate,
+        inputs=[
+            components["npc_selector"],
+            components["text_input"],
+            components["emotion_mode"],
+            components["emotion_description"],
+            components["vec_happy"], components["vec_angry"],
+            components["vec_sad"], components["vec_afraid"],
+            components["vec_disgusted"], components["vec_melancholic"],
+            components["vec_surprised"], components["vec_calm"],
+            components["emotion_weight"],
+            components["save_to_db_checkbox"],
+            components["do_sample"], components["temperature"],
+            components["top_p"], components["top_k"],
+            components["num_beams"], components["repetition_penalty"],
+            components["length_penalty"], components["max_mel_tokens"],
+            components["interval_silence"], components["max_text_tokens_per_segment"],
+        ],
+        outputs=[
+            components["audio_output"],
+            components["generation_info"],
+            components["generation_info"],  # visibility control
+        ],
+    )
+
+    # Load sample history when NPC changes or refresh button clicked
+    async def on_load_history(npc_id):
+        if not npc_id:
+            return gr.update(value=[])
+
+        try:
+            samples = await recording_service.get_sample_history(npc_id, limit=20)
+
+            # Format for dataframe
+            rows = []
+            for sample in samples:
+                animation_id = sample["metadata"].get("animation_id", "N/A")
+                rows.append([
+                    sample["id"],
+                    sample["text"][:50] + "..." if len(sample["text"]) > 50 else sample["text"],
+                    sample["created_at"][:19],  # Remove microseconds
+                    animation_id,
+                    sample["audio_size"],
+                ])
+
+            return gr.update(value=rows)
+        except Exception as e:
+            logger.exception(f"Error loading history: {e}")
+            return gr.update(value=[])
+
+    components["npc_selector"].change(
+        fn=on_load_history,
+        inputs=[components["npc_selector"]],
+        outputs=[components["history_list"]],
+    )
+
+    components["refresh_history_btn"].click(
+        fn=on_load_history,
+        inputs=[components["npc_selector"]],
+        outputs=[components["history_list"]],
+    )
+
+    # Load and play selected sample from history
+    async def on_load_sample(sample_id):
+        if not sample_id:
+            return None, gr.update(visible=False)
+
+        try:
+            audio_bytes = await recording_service.load_sample_audio(int(sample_id))
+            if not audio_bytes:
+                return None, gr.update(visible=False)
+
+            # Save to temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+                f.write(audio_bytes)
+                temp_path = f.name
+
+            return temp_path, gr.update(visible=True)
+        except Exception as e:
+            logger.exception(f"Error loading sample: {e}")
+            return None, gr.update(visible=False)
+
+    components["load_history_btn"].click(
+        fn=on_load_sample,
+        inputs=[components["selected_history_id"]],
+        outputs=[components["history_audio"], components["history_audio"]],
     )
 
 
